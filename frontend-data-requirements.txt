@@ -1,0 +1,260 @@
+# Collector Domain - Frontend Data Requirements
+
+## Overview
+This document defines all data that the Collector Domain captures directly from frontend user interactions via APIs. This represents the **explicit contract** between the frontend and the Collector Domain.
+
+**Domain:** Collector Domain
+**Purpose:** Buyer/collector profiles, taste profiles, saved items, follows, and collections
+**Last Updated:** 2026-01-31
+
+---
+
+## Data Sources
+
+All data in this file comes from:
+- ✅ **Frontend user interactions** (forms, dashboards, settings)
+- ✅ **API requests** (REST/GraphQL endpoints)
+- ❌ **NOT from other domains** (see `inter-domain-data-requirements.txt`)
+
+---
+
+## 1. COLLECTOR PROFILE MANAGEMENT
+
+### 1.1 Profile Setup (Onboarding)
+**Endpoint**: `POST /collector/profile/setup`
+**Source**: Collector onboarding flow
+
+```typescript
+{
+  displayName: string,                  // Required - "Art Enthusiast"
+  location: {
+    country: string,                    // Required
+    state: string,                      // Required
+    city: string,                       // Required
+    zipCode?: string,
+    timezone: string,                   // Required
+  },
+  bio?: string,                         // Optional, max 500 chars
+  profileImageUrl?: string,             // S3 URL after upload
+  profileVisibility: 'public' | 'makers_only' | 'private',
+  showPurchaseHistory: boolean,
+  showCollections: boolean,
+  initialInterests: string[],           // 1-10 items
+  typicalBudgetRange: {
+    min: number,
+    max: number,
+  },
+}
+```
+
+**Validation**:
+- displayName: 3-50 characters
+- bio: max 500 characters
+- initialInterests: 1-10 items
+- typicalBudgetRange.min < max
+
+---
+
+### 1.2 Profile Updates
+**Endpoint**: `PUT /collector/profile/update`
+**Source**: Settings page
+
+```typescript
+{
+  displayName?: string,
+  bio?: string,
+  profileImageUrl?: string,
+  location?: {
+    country?: string,
+    state?: string,
+    city?: string,
+    zipCode?: string,
+  },
+  profileVisibility?: 'public' | 'makers_only' | 'private',
+  showPurchaseHistory?: boolean,
+  showCollections?: boolean,
+}
+```
+
+---
+
+## 2. SAVED ITEMS
+
+### 2.1 Save Item
+**Endpoint**: `POST /collector/saved-items/add`
+**Source**: Product page → Save button
+
+```typescript
+{
+  productId: string,
+  notes?: string,                       // Optional personal notes
+  tags?: string[],                      // ["gift_idea", "wishlist"]
+}
+```
+
+### 2.2 Remove Saved Item
+**Endpoint**: `DELETE /collector/saved-items/{productId}`
+**Source**: Saved items page
+
+---
+
+## 3. FOLLOW MAKERS
+
+### 3.1 Follow Maker
+**Endpoint**: `POST /collector/follows/add`
+**Source**: Maker profile → Follow button
+
+```typescript
+{
+  makerUserId: string,
+  notifyOnNewProduct: boolean,          // Default: true
+  notifyOnSale: boolean,                // Default: false
+}
+```
+
+**Events Emitted**: `MakerFollowed` → Maker Domain
+
+### 3.2 Unfollow Maker
+**Endpoint**: `DELETE /collector/follows/{makerUserId}`
+**Source**: Follows page
+
+**Events Emitted**: `MakerUnfollowed` → Maker Domain
+
+---
+
+## 4. WISHLISTS
+
+### 4.1 Add to Wishlist
+**Endpoint**: `POST /collector/wishlist/add`
+**Source**: Product page → Wishlist button
+
+```typescript
+{
+  productId: string,
+  priority: 'low' | 'medium' | 'high',
+  maxPrice?: number,                    // Will buy if price drops below
+  notes?: string,
+}
+```
+
+### 4.2 Remove from Wishlist
+**Endpoint**: `DELETE /collector/wishlist/{productId}`
+**Source**: Wishlist page
+
+---
+
+## 5. COLLECTIONS
+
+### 5.1 Create Collection
+**Endpoint**: `POST /collector/collection/create`
+**Source**: Collections page → New collection
+
+```typescript
+{
+  title: string,                        // "My Tea Ceremony Collection"
+  description?: string,
+  theme?: string,                       // "Japanese ceramics"
+  visibility: 'public' | 'private',
+  coverImageUrl?: string,
+}
+```
+
+**Validation**:
+- title: 3-100 characters
+
+### 5.2 Add Item to Collection
+**Endpoint**: `POST /collector/collection/{collectionId}/items`
+**Source**: Collection detail page
+
+```typescript
+{
+  productId: string,
+  order: number,                        // Position in collection
+  notes?: string,
+}
+```
+
+### 5.3 Remove Item from Collection
+**Endpoint**: `DELETE /collector/collection/{collectionId}/items/{productId}`
+**Source**: Collection detail page
+
+### 5.4 Update Collection
+**Endpoint**: `PUT /collector/collection/{collectionId}`
+**Source**: Collection settings
+
+```typescript
+{
+  title?: string,
+  description?: string,
+  theme?: string,
+  visibility?: 'public' | 'private',
+  coverImageUrl?: string,
+}
+```
+
+### 5.5 Delete Collection
+**Endpoint**: `DELETE /collector/collection/{collectionId}`
+**Source**: Collection settings
+
+---
+
+## API Endpoints Summary
+
+### Profile
+- `POST /collector/profile/setup` - Initial setup
+- `PUT /collector/profile/update` - Update profile
+- `GET /collector/profile` - Get own profile
+- `GET /collector/profile/{collectorId}` - Get public profile
+
+### Saved Items
+- `POST /collector/saved-items/add` - Save product
+- `DELETE /collector/saved-items/{productId}` - Unsave
+- `GET /collector/saved-items` - List saved items
+
+### Follows
+- `POST /collector/follows/add` - Follow maker
+- `DELETE /collector/follows/{makerUserId}` - Unfollow
+- `GET /collector/follows` - List followed makers
+
+### Wishlists
+- `POST /collector/wishlist/add` - Add to wishlist
+- `DELETE /collector/wishlist/{productId}` - Remove
+- `GET /collector/wishlist` - List wishlist items
+
+### Collections
+- `POST /collector/collection/create` - Create collection
+- `POST /collector/collection/{collectionId}/items` - Add item
+- `DELETE /collector/collection/{collectionId}/items/{productId}` - Remove item
+- `PUT /collector/collection/{collectionId}` - Update collection
+- `DELETE /collector/collection/{collectionId}` - Delete collection
+- `GET /collector/collections` - List collections
+- `GET /collector/collection/{collectionId}` - Get collection details
+
+---
+
+## Validation Summary
+
+| Field | Type | Required | Min | Max | Pattern |
+|-------|------|----------|-----|-----|---------|
+| displayName | string | Yes | 3 | 50 | Alphanumeric + spaces |
+| bio | string | No | 0 | 500 | Plain text |
+| location.country | string | Yes | 2 | 100 | Alpha |
+| location.city | string | Yes | 2 | 100 | Alpha + spaces |
+| title (collection) | string | Yes | 3 | 100 | Any |
+| priority | enum | Yes | - | - | low\|medium\|high |
+
+---
+
+## Error Responses
+
+All frontend API calls should handle:
+- `400 Bad Request` - Validation errors
+- `401 Unauthorized` - Auth token missing/invalid
+- `403 Forbidden` - User not allowed to perform action
+- `404 Not Found` - Resource not found
+- `409 Conflict` - Duplicate collection name
+- `500 Internal Server Error` - Server error
+
+---
+
+**Note:** This file only documents data from frontend interactions. For data consumed from other domains (events), see `inter-domain-data-requirements.txt`.

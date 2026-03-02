@@ -1,0 +1,531 @@
+================================================================================
+COLLECTOR DOMAIN - INPUT VALIDATION RULES
+================================================================================
+
+This document defines all input validation rules for the Collector Domain GraphQL API.
+All mutations and queries must validate inputs according to these rules.
+
+================================================================================
+QUERY: getCollectorProfile
+================================================================================
+
+Input:
+- userId: ID! (required)
+
+Validation Rules:
+1. userId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID (or user must have admin permissions)
+
+Error Responses:
+- 400 Bad Request: Invalid userId format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot access other user's profile
+- 404 Not Found: Collector profile not found
+
+================================================================================
+QUERY: listSavedItems
+================================================================================
+
+Input:
+- collectorUserId: ID! (required)
+- limit: Int (optional, default: 20, max: 100)
+- nextToken: String (optional)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID (or user must have admin permissions)
+
+2. limit:
+   - Must be between 1 and 100
+   - Default: 20 if not provided
+   - Must be a positive integer
+
+3. nextToken:
+   - Must be a valid pagination token if provided
+   - Cannot be empty string
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot access other user's saved items
+
+================================================================================
+MUTATION: updateCollectorProfile
+================================================================================
+
+Input: UpdateCollectorProfileInput!
+- userId: ID! (required)
+- defaultShippingAddress: ShippingAddressInput (optional)
+- preferences: CollectorPreferencesInput (optional)
+
+Validation Rules:
+1. userId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. defaultShippingAddress (if provided):
+   - street: String! (required if address provided)
+     * Minimum length: 5 characters
+     * Maximum length: 200 characters
+     * Cannot be all whitespace
+   - city: String! (required if address provided)
+     * Minimum length: 2 characters
+     * Maximum length: 100 characters
+     * Must contain only letters, spaces, hyphens, and apostrophes
+   - state: String! (required if address provided)
+     * Minimum length: 2 characters
+     * Maximum length: 100 characters
+     * Must be valid state/province code or name
+   - zip: String! (required if address provided)
+     * Minimum length: 3 characters
+     * Maximum length: 20 characters
+     * Must match postal code format for country
+   - country: String! (required if address provided)
+     * Must be valid ISO 3166-1 alpha-2 country code (2 letters)
+     * Must be uppercase
+
+3. preferences (if provided):
+   - emailNotifications: Boolean (optional)
+     * Must be true or false if provided
+   - marketingEmails: Boolean (optional)
+     * Must be true or false if provided
+   - defaultSort: String (optional)
+     * Must be one of: "newest", "oldest", "price_low", "price_high", "relevance"
+     * Maximum length: 50 characters
+
+Business Rules:
+- At least one field (defaultShippingAddress or preferences) must be provided
+- Cannot update userId (immutable)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot update other user's profile
+- 422 Unprocessable Entity: Validation failed (detailed field errors)
+
+================================================================================
+MUTATION: saveItem
+================================================================================
+
+Input: SaveItemInput!
+- collectorUserId: ID! (required)
+- productId: ID! (required)
+- notes: String (optional)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. productId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing product (validate via event or cross-domain check)
+
+3. notes (if provided):
+   - Maximum length: 500 characters
+   - Can contain letters, numbers, spaces, and common punctuation
+   - Trim leading/trailing whitespace
+
+Business Rules:
+- Product must exist and be active
+- User cannot save the same product twice (idempotent operation)
+- If item already saved, update notes if provided
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot save items for other users
+- 404 Not Found: Product not found
+- 409 Conflict: Item already saved (if not idempotent)
+
+================================================================================
+MUTATION: unsaveItem
+================================================================================
+
+Input: UnsaveItemInput!
+- collectorUserId: ID! (required)
+- productId: ID! (required)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. productId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+
+Business Rules:
+- Item must exist in user's saved items
+- Operation is idempotent (no error if item not saved)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot unsave items for other users
+
+================================================================================
+MUTATION: createCollection
+================================================================================
+
+Input: CreateCollectionInput!
+- collectorUserId: ID! (required)
+- name: String! (required)
+- description: String (optional)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. name:
+   - Minimum length: 1 character
+   - Maximum length: 100 characters
+   - Cannot be all whitespace
+   - Trim leading/trailing whitespace
+   - Must be unique per user (cannot have two collections with same name)
+
+3. description (if provided):
+   - Maximum length: 500 characters
+   - Can contain letters, numbers, spaces, and common punctuation
+   - Trim leading/trailing whitespace
+
+Business Rules:
+- User cannot have more than 50 collections (configurable limit)
+- Collection name must be unique per user
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot create collections for other users
+- 409 Conflict: Collection name already exists for user
+- 422 Unprocessable Entity: Maximum collection limit reached
+
+================================================================================
+MUTATION: updateCollection
+================================================================================
+
+Input: UpdateCollectionInput!
+- collectionId: ID! (required)
+- name: String (optional)
+- description: String (optional)
+
+Validation Rules:
+1. collectionId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing collection owned by authenticated user
+
+2. name (if provided):
+   - Minimum length: 1 character
+   - Maximum length: 100 characters
+   - Cannot be all whitespace
+   - Trim leading/trailing whitespace
+   - Must be unique per user (if changing name)
+
+3. description (if provided):
+   - Maximum length: 500 characters
+   - Can contain letters, numbers, spaces, and common punctuation
+   - Trim leading/trailing whitespace
+   - Can be null to clear description
+
+Business Rules:
+- At least one field (name or description) must be provided
+- Collection must be owned by authenticated user
+- If updating name, new name must be unique per user
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot update other user's collection
+- 404 Not Found: Collection not found
+- 409 Conflict: Collection name already exists for user
+
+================================================================================
+MUTATION: deleteCollection
+================================================================================
+
+Input:
+- collectionId: ID! (required)
+
+Validation Rules:
+1. collectionId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing collection owned by authenticated user
+
+Business Rules:
+- Collection must be owned by authenticated user
+- Deleting collection does not delete collection items (cascade handled by domain logic)
+
+Error Responses:
+- 400 Bad Request: Invalid collectionId format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot delete other user's collection
+- 404 Not Found: Collection not found
+
+================================================================================
+MUTATION: addItemToCollection
+================================================================================
+
+Input: AddItemToCollectionInput!
+- collectionId: ID! (required)
+- productId: ID! (required)
+- notes: String (optional)
+
+Validation Rules:
+1. collectionId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing collection owned by authenticated user
+
+2. productId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing product
+
+3. notes (if provided):
+   - Maximum length: 500 characters
+   - Can contain letters, numbers, spaces, and common punctuation
+   - Trim leading/trailing whitespace
+
+Business Rules:
+- Collection must be owned by authenticated user
+- Product must exist and be active
+- Item cannot be added to same collection twice (idempotent operation)
+- Collection cannot exceed 1000 items (configurable limit)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot modify other user's collection
+- 404 Not Found: Collection or product not found
+- 422 Unprocessable Entity: Collection item limit reached
+
+================================================================================
+MUTATION: removeItemFromCollection
+================================================================================
+
+Input: RemoveItemFromCollectionInput!
+- collectionId: ID! (required)
+- productId: ID! (required)
+
+Validation Rules:
+1. collectionId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing collection owned by authenticated user
+
+2. productId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+
+Business Rules:
+- Collection must be owned by authenticated user
+- Operation is idempotent (no error if item not in collection)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot modify other user's collection
+
+================================================================================
+MUTATION: followMaker
+================================================================================
+
+Input: FollowMakerInput!
+- collectorUserId: ID! (required)
+- makerUserId: ID! (required)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. makerUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing maker profile
+   - Cannot be the same as collectorUserId (users cannot follow themselves)
+
+Business Rules:
+- Maker must exist and be verified (optional business rule)
+- User cannot follow the same maker twice (idempotent operation)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot follow makers for other users
+- 400 Bad Request: Cannot follow yourself
+- 404 Not Found: Maker not found
+
+================================================================================
+MUTATION: unfollowMaker
+================================================================================
+
+Input: UnfollowMakerInput!
+- collectorUserId: ID! (required)
+- makerUserId: ID! (required)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. makerUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+
+Business Rules:
+- Operation is idempotent (no error if not following)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot unfollow makers for other users
+
+================================================================================
+MUTATION: addToWishlist
+================================================================================
+
+Input: AddToWishlistInput!
+- collectorUserId: ID! (required)
+- productId: ID! (required)
+- notes: String (optional)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. productId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must reference an existing product
+
+3. notes (if provided):
+   - Maximum length: 500 characters
+   - Can contain letters, numbers, spaces, and common punctuation
+   - Trim leading/trailing whitespace
+
+Business Rules:
+- Product must exist and be active
+- User cannot add the same product to wishlist twice (idempotent operation)
+- User cannot exceed 500 wishlist items (configurable limit)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot modify other user's wishlist
+- 404 Not Found: Product not found
+- 422 Unprocessable Entity: Wishlist limit reached
+
+================================================================================
+MUTATION: removeFromWishlist
+================================================================================
+
+Input: RemoveFromWishlistInput!
+- collectorUserId: ID! (required)
+- productId: ID! (required)
+
+Validation Rules:
+1. collectorUserId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+   - Must match authenticated user's ID
+
+2. productId:
+   - Must be a valid UUID or ID format
+   - Cannot be null or empty
+
+Business Rules:
+- Operation is idempotent (no error if item not in wishlist)
+
+Error Responses:
+- 400 Bad Request: Invalid input format
+- 401 Unauthorized: Not authenticated
+- 403 Forbidden: Cannot modify other user's wishlist
+
+================================================================================
+COMMON VALIDATION PATTERNS
+================================================================================
+
+1. ID Validation:
+   - All ID fields must be valid UUID v4 format or domain-specific ID format
+   - Cannot be null, empty, or whitespace-only
+   - Must match expected format for the domain
+
+2. String Validation:
+   - Trim leading/trailing whitespace
+   - Reject null bytes and control characters
+   - Validate UTF-8 encoding
+   - Enforce length limits to prevent DoS
+
+3. Authentication:
+   - All mutations require valid authentication token
+   - User can only modify their own data (unless admin)
+   - Validate user ID matches authenticated user
+
+4. Pagination:
+   - limit: Must be between 1 and 100, default 20
+   - nextToken: Must be valid if provided
+   - Return nextToken for pagination continuation
+
+5. Rate Limiting:
+   - Create operations: 50 per hour per user
+   - Update operations: 100 per hour per user
+   - List operations: 200 per hour per user
+
+================================================================================
+CROSS-DOMAIN VALIDATION
+================================================================================
+
+1. Product Validation:
+   - Validate productId exists via ProductPublished events
+   - Check product is active before allowing save/add operations
+   - Handle gracefully if product not found (404)
+
+2. Maker Validation:
+   - Validate makerUserId exists via Maker Domain
+   - Check maker is verified before allowing follow (optional)
+   - Handle gracefully if maker not found (404)
+
+3. User Validation:
+   - Validate userId exists via Auth Essentials Domain
+   - Check user account is active
+   - Handle gracefully if user not found (404)
+
+================================================================================
+ERROR RESPONSE FORMAT
+================================================================================
+
+All validation errors should return structured error responses:
+
+{
+  "errors": [
+    {
+      "message": "Validation failed",
+      "extensions": {
+        "code": "VALIDATION_ERROR",
+        "field": "name",
+        "reason": "Collection name must be between 1 and 100 characters"
+      }
+    }
+  ]
+}
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

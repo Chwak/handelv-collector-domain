@@ -1,0 +1,1086 @@
+# Collector Domain - Data Requirements (Phase 1)
+
+## Overview
+The Collector Domain manages all data related to buyers/collectors, their taste profiles, collecting strategies, saved items, follows, and community influence. This is a **SOURCE domain** that emits events consumed by other domains.
+
+---
+
+## 1. DATA CAPTURED DIRECTLY FROM FRONTEND
+
+### 1.1 Initial Registration (From Auth Flow)
+**Source**: Sign-up form → Auth Domain → Collector Domain
+
+```typescript
+// Received via SNS event after email verification
+{
+  userId: string,              // From Cognito (sub)
+  email: string,               // From sign-up form
+  username: string,            // From sign-up form
+  fullName: string,            // Composed from firstName + lastName
+  givenName: string,           // From sign-up form
+  familyName: string,          // From sign-up form
+  phoneNumber?: string,        // Optional from sign-up form
+  emailVerified: boolean,      // From Cognito verification
+  emailVerifiedAt: string,     // Timestamp
+  experience: string[],        // ["maker", "collector"] from sign-up
+}
+```
+
+**Tables Affected**:
+- `collector_profiles_table` - Creates initial profile
+
+**Flow**:
+1. User signs up with collector experience selected
+2. Auth domain verifies email
+3. `UserRegistrationComplete` event published to SNS
+4. Collector domain creates profile from event data
+
+---
+
+### 1.2 Profile Setup (Onboarding)
+**Source**: Collector onboarding flow (frontend)
+
+```typescript
+// POST /collector/profile/setup
+{
+  // Display Name (public name shown to makers)
+  displayName: string,                  // Required - "Art Enthusiast" or real name
+  
+  // Location
+  location: {
+    country: string,                    // Required - "USA"
+    state: string,                      // Required - "New York"
+    city: string,                       // Required - "Brooklyn"
+    zipCode?: string,                   // Optional - "11201"
+    timezone: string,                   // Required - "America/New_York"
+  },
+  
+  // Profile
+  bio?: string,                         // Optional - "Passionate about handmade ceramics..."
+  profileImageUrl?: string,             // Optional - S3 URL after upload
+  
+  // Privacy Settings
+  profileVisibility: 'public' | 'makers_only' | 'private',
+  showPurchaseHistory: boolean,
+  showCollections: boolean,
+  
+  // Initial Interests (will expand in taste profile table)
+  initialInterests: string[],           // ["ceramics", "woodwork", "jewelry"]
+  
+  // Budget Range (for personalization)
+  typicalBudgetRange: {
+    min: number,
+    max: number,
+  },
+}
+```
+
+**Tables Affected**:
+- `collector_profiles_table` - Updates profile with setup data
+
+**Validation Rules**:
+- displayName: 3-50 characters
+- bio: max 500 characters
+- initialInterests: 1-10 items
+- typicalBudgetRange.min < typicalBudgetRange.max
+
+---
+
+### 1.3 Taste Profile Setup (Onboarding/Settings)
+**Source**: Collector dashboard → Taste profile wizard
+
+```typescript
+// POST /collector/taste-profile/create
+{
+  profileVersion: string,               // "v1" (increments with major changes)
+  
+  // Aesthetic Preferences
+  aestheticPreferences: {
+    dominantStyles: Array<{
+      style: string,                    // "Minimalist", "Rustic", "Modern"
+      affinity: number,                 // 0.0-1.0
+    }>,
+    
+    // Color preferences (hex codes with affinity scores)
+    colorAffinityScores: {
+      [hex: string]: number,            // {"#FFFFFF": 0.9, "#8B4513": 0.7}
+    },
+    
+    texturePreferences: {
+      smooth: number,                   // 0-10
+      rough: number,                    // 0-10
+      organic: number,                  // 0-10
+      geometric: number,                // 0-10
+    },
+    
+    scalePreferences: 'miniature' | 'tabletop' | 'statement' | 'monumental' | 'mixed',
+    
+    patternComplexity: 'minimalist' | 'moderate' | 'intricate' | 'maximalist',
+  },
+  
+  // Functional vs Decorative
+  functionalVsDecorative: number,       // 0-1 (0=pure decor, 1=pure function)
+  modernVsTraditional: number,          // 0-1
+  naturalVsSynthetic: number,           // 0-1
+  symmetryVsAsymmetry: number,          // 0-1
+  
+  // Value Alignment
+  valueAlignment: {
+    sustainability: number,             // 1-10 (importance)
+    localArtisan: number,               // 1-10
+    traditionalMethods: number,         // 1-10
+    modernInnovation: number,           // 1-10
+    storyAndHeritage: number,           // 1-10
+    investmentValue: number,            // 1-10
+  },
+  
+  // Budget Profiles
+  budgetProfiles: {
+    everydayItems: { min: number, max: number },
+    specialOccasions: { min: number, max: number },
+    investmentPieces: { min: number, max: number },
+  },
+  
+  // Context
+  lifestageContext?: string,            // "new_home", "wedding", "retirement"
+  styleConfidenceLevel: number,         // 1-10 (how sure they are of their taste)
+}
+```
+
+**Tables Affected**:
+- `collector_taste_profile_table` (NEW) - Deep taste analysis
+
+**Validation Rules**:
+- affinity scores: 0.0-1.0
+- texture preferences: 0-10
+- value alignment: 1-10
+- budget min < max
+
+---
+
+### 1.4 Acquisition Strategy Setup
+**Source**: Collector dashboard → Collecting strategy
+
+```typescript
+// POST /collector/strategy/setup
+{
+  strategyPeriod: string,               // "2026-02" (monthly)
+  
+  // Budget
+  monthlyBudget: number,                // Total budget for month
+  budgetByCategory: {
+    [category: string]: number,         // {"ceramics": 500, "jewelry": 300}
+  },
+  
+  // Goals
+  acquisitionGoals: Array<{
+    goal: string,                       // "Complete tea set", "One piece per maker"
+    priority: number,                   // 1-5
+    deadline?: string,                  // ISO date
+    progress: number,                   // 0-100%
+  }>,
+  
+  // Collection Gaps
+  collectionGaps: Array<{
+    category: string,                   // "Serving bowls"
+    description: string,                // "Missing large serving bowl"
+    targetPrice: number,                // Max willing to pay
+    urgency: 'low' | 'medium' | 'high',
+  }>,
+  
+  // Target Makers
+  targetMakers: Array<{
+    makerId: string,
+    reason: string,                     // "Love their glaze technique"
+    targetItem?: string,                // "Dinner plates"
+    maxPrice: number,
+  }>,
+  
+  // Watch List
+  watchList: Array<{
+    productId: string,
+    currentPrice: number,
+    targetPrice: number,                // Will buy at this price
+    expiryDate?: string,                // Stop watching after
+  }>,
+  
+  // Strategy
+  investmentVsPersonal: number,         // 0-1 ratio
+  timeHorizon: 'immediate' | 'quarterly' | 'annual' | 'lifetime',
+  
+  // Price Tolerance
+  priceToleranceByUrgency: {
+    low: number,                        // % premium (e.g., 5)
+    medium: number,                     // % premium (e.g., 15)
+    high: number,                       // % premium (e.g., 30)
+  },
+  
+  // Seasonal
+  seasonalBudgetAllocation: {
+    q1: number,
+    q2: number,
+    q3: number,
+    q4: number,
+  },
+  
+  // Thresholds
+  splurgeThreshold: number,             // Willing to exceed budget by this %
+  dealThreshold: number,                // Will buy if discount exceeds this %
+  
+  // Financial Events
+  financialEvents: Array<{
+    date: string,
+    type: string,                       // "bonus", "tax_refund"
+    amount: number,
+    allocatedToBuying: number,
+  }>,
+}
+```
+
+**Tables Affected**:
+- `collector_acquisition_strategy_table` (NEW) - Strategic collecting
+
+**Validation Rules**:
+- monthlyBudget: > 0
+- priority: 1-5
+- progress: 0-100
+- ratios: 0-1
+- percentages: 0-100
+
+---
+
+### 1.5 Saved Items
+**Source**: Product page → Save button
+
+```typescript
+// POST /collector/saved-items/add
+{
+  collectorUserId: string,
+  productId: string,
+  savedAt: string,                      // Auto-generated
+  notes?: string,                       // Optional personal notes
+  tags?: string[],                      // Optional tags: ["gift_idea", "wishlist"]
+}
+
+// DELETE /collector/saved-items/remove
+{
+  collectorUserId: string,
+  productId: string,
+}
+```
+
+**Tables Affected**:
+- `saved_items_table` (EXISTS) - Save/unsave products
+
+---
+
+### 1.6 Follow Makers
+**Source**: Maker profile → Follow button
+
+```typescript
+// POST /collector/follows/add
+{
+  collectorUserId: string,
+  makerUserId: string,
+  followedAt: string,                   // Auto-generated
+  notifyOnNewProduct: boolean,          // Default: true
+  notifyOnSale: boolean,                // Default: false
+}
+
+// DELETE /collector/follows/remove
+{
+  collectorUserId: string,
+  makerUserId: string,
+}
+```
+
+**Tables Affected**:
+- `follows_table` (EXISTS) - Follow/unfollow makers
+
+**Events Emitted**:
+- `MakerFollowed` → Consumed by Maker Domain
+- `MakerUnfollowed` → Consumed by Maker Domain
+
+---
+
+### 1.7 Wishlists
+**Source**: Collector dashboard → Wishlists
+
+```typescript
+// POST /collector/wishlist/add
+{
+  collectorUserId: string,
+  productId: string,
+  priority: 'low' | 'medium' | 'high',
+  maxPrice?: number,                    // Will buy if price drops below
+  notes?: string,
+  addedAt: string,                      // Auto-generated
+}
+
+// DELETE /collector/wishlist/remove
+{
+  collectorUserId: string,
+  productId: string,
+}
+```
+
+**Tables Affected**:
+- `wishlists_table` (EXISTS) - Manage wishlist items
+
+---
+
+### 1.8 Collections (Custom Curation)
+**Source**: Collector dashboard → Collections
+
+```typescript
+// POST /collector/collection/create
+{
+  collectorUserId: string,
+  collectionId: string,                 // Auto-generated UUID
+  title: string,                        // "My Tea Ceremony Collection"
+  description?: string,
+  theme?: string,                       // "Japanese ceramics", "Wedding gifts"
+  visibility: 'public' | 'private',
+  coverImageUrl?: string,
+  createdAt: string,                    // Auto-generated
+}
+
+// POST /collector/collection/add-item
+{
+  collectionId: string,
+  productId: string,
+  order: number,                        // Position in collection
+  notes?: string,
+  addedAt: string,
+}
+
+// DELETE /collector/collection/remove-item
+{
+  collectionId: string,
+  productId: string,
+}
+```
+
+**Tables Affected**:
+- `collections_table` (EXISTS) - Manage collections
+- `collection_items_table` (EXISTS) - Items in collections
+
+---
+
+### 1.9 Profile Updates (Ongoing)
+**Source**: Collector dashboard → Settings
+
+```typescript
+// PUT /collector/profile/update
+{
+  displayName?: string,
+  bio?: string,
+  profileImageUrl?: string,
+  location?: {
+    country?: string,
+    state?: string,
+    city?: string,
+    zipCode?: string,
+  },
+  profileVisibility?: 'public' | 'makers_only' | 'private',
+  showPurchaseHistory?: boolean,
+  showCollections?: boolean,
+}
+```
+
+**Tables Affected**:
+- `collector_profiles_table` - Updates existing profile
+
+---
+
+## 2. DATA RECEIVED AS EVENTS FROM OTHER DOMAINS
+
+### 2.1 From Auth Domain
+**Event**: `UserRegistrationComplete`
+**Source**: Auth Domain → SNS Topic → SQS Queue → Collector Lambda
+
+```typescript
+{
+  event: "UserRegistrationComplete",
+  userId: string,
+  email: string,
+  username: string,
+  verifiedAt: string,
+  makerEnabled: boolean,
+  collectorEnabled: boolean,
+  name: string,
+  givenName: string,
+  familyName: string,
+  phoneNumber?: string,
+}
+```
+
+**Action**: Create initial collector profile
+**Table**: `collector_profiles_table`
+
+---
+
+### 2.2 From Order Domain
+**Event**: `OrderPlaced`
+**Source**: Order Domain → EventBridge → Collector Lambda
+
+```typescript
+{
+  event: "OrderPlaced",
+  orderId: string,
+  collectorUserId: string,
+  makerUserId: string,
+  productIds: string[],
+  totalAmount: number,
+  placedAt: string,
+}
+```
+
+**Action**: Update acquisition strategy and taste profile
+**Tables**:
+- `collector_acquisition_strategy_table` - Track spending against budget
+- `collector_taste_profile_table` - Learn from purchase patterns
+
+---
+
+### 2.3 From Order Domain
+**Event**: `OrderDelivered`
+**Source**: Order Domain → EventBridge → Collector Lambda
+
+```typescript
+{
+  event: "OrderDelivered",
+  orderId: string,
+  collectorUserId: string,
+  productIds: string[],
+  deliveredAt: string,
+}
+```
+
+**Action**: Prompt for review, update collection curation
+**Tables**:
+- `collection_items_table` - Auto-suggest adding to collection
+
+---
+
+### 2.4 From Product Domain
+**Event**: `ProductPriceDropped`
+**Source**: Product Domain → EventBridge → Collector Lambda
+
+```typescript
+{
+  event: "ProductPriceDropped",
+  productId: string,
+  makerUserId: string,
+  oldPrice: number,
+  newPrice: number,
+  dropPercentage: number,
+  updatedAt: string,
+}
+```
+
+**Action**: Check wishlist and notify if price target met
+**Table**: `wishlists_table`
+
+**Events Emitted**:
+- `PriceAlertTriggered` → Notification Domain
+
+---
+
+### 2.5 From Product Domain
+**Event**: `ProductRestocked`
+**Source**: Product Domain → EventBridge → Collector Lambda
+
+```typescript
+{
+  event: "ProductRestocked",
+  productId: string,
+  makerUserId: string,
+  quantityAvailable: number,
+  restockedAt: string,
+}
+```
+
+**Action**: Check wishlist and notify if waiting for restock
+**Table**: `wishlists_table`
+
+**Events Emitted**:
+- `RestockAlertTriggered` → Notification Domain
+
+---
+
+### 2.6 From Maker Domain
+**Event**: `MakerPublishedNewProduct`
+**Source**: Maker Domain → EventBridge → Collector Lambda
+
+```typescript
+{
+  event: "MakerPublishedNewProduct",
+  makerUserId: string,
+  productId: string,
+  categoryId: string,
+  publishedAt: string,
+}
+```
+
+**Action**: Check follows and notify followers
+**Table**: `follows_table`
+
+**Events Emitted**:
+- `NewProductFromFollowedMaker` → Notification Domain
+
+---
+
+### 2.7 From Review Domain
+**Event**: `ReviewPublished`
+**Source**: Review Domain → EventBridge → Collector Lambda
+
+```typescript
+{
+  event: "ReviewPublished",
+  reviewId: string,
+  reviewerUserId: string,
+  productId: string,
+  rating: number,
+  publishedAt: string,
+}
+```
+
+**Action**: Update collector community influence metrics
+**Table**: `collector_community_influence_table` (NEW)
+
+---
+
+### 2.8 From Discovery Domain
+**Event**: `ItemRecommended`
+**Source**: Discovery Domain → EventBridge → Collector Lambda
+
+```typescript
+{
+  event: "ItemRecommended",
+  collectorUserId: string,
+  productId: string,
+  recommendationScore: number,
+  reason: string,
+  recommendedAt: string,
+}
+```
+
+**Action**: Track recommendation effectiveness (did they buy?)
+**Table**: `collector_taste_profile_table` - Refine profile
+
+---
+
+## 3. EVENTS EMITTED BY COLLECTOR DOMAIN
+
+These events are produced by the Collector Domain and consumed by other domains:
+
+### 3.1 `MakerFollowed`
+**Trigger**: Collector follows a maker
+**Consumers**: Maker, Notification, Analytics
+
+```typescript
+{
+  event: "MakerFollowed",
+  collectorUserId: string,
+  makerUserId: string,
+  followedAt: string,
+}
+```
+
+---
+
+### 3.2 `MakerUnfollowed`
+**Trigger**: Collector unfollows a maker
+**Consumers**: Maker, Analytics
+
+```typescript
+{
+  event: "MakerUnfollowed",
+  collectorUserId: string,
+  makerUserId: string,
+  unfollowedAt: string,
+}
+```
+
+---
+
+### 3.3 `ProductSaved`
+**Trigger**: Collector saves a product
+**Consumers**: Discovery, Analytics
+
+```typescript
+{
+  event: "ProductSaved",
+  collectorUserId: string,
+  productId: string,
+  makerUserId: string,
+  savedAt: string,
+}
+```
+
+---
+
+### 3.4 `ProductUnsaved`
+**Trigger**: Collector unsaves a product
+**Consumers**: Analytics
+
+```typescript
+{
+  event: "ProductUnsaved",
+  collectorUserId: string,
+  productId: string,
+  unsavedAt: string,
+}
+```
+
+---
+
+### 3.5 `WishlistItemAdded`
+**Trigger**: Collector adds item to wishlist
+**Consumers**: Notification, Analytics
+
+```typescript
+{
+  event: "WishlistItemAdded",
+  collectorUserId: string,
+  productId: string,
+  maxPrice?: number,
+  priority: string,
+  addedAt: string,
+}
+```
+
+---
+
+### 3.6 `CollectionCreated`
+**Trigger**: Collector creates a new collection
+**Consumers**: Discovery, Analytics
+
+```typescript
+{
+  event: "CollectionCreated",
+  collectorUserId: string,
+  collectionId: string,
+  title: string,
+  theme?: string,
+  visibility: string,
+  createdAt: string,
+}
+```
+
+---
+
+### 3.7 `TasteProfileUpdated`
+**Trigger**: Collector updates taste profile or system learns
+**Consumers**: Discovery, Recommendation Engine
+
+```typescript
+{
+  event: "TasteProfileUpdated",
+  collectorUserId: string,
+  profileVersion: string,
+  dominantStyles: string[],
+  updatedAt: string,
+}
+```
+
+---
+
+## 4. DATA STORAGE STRUCTURE
+
+### 4.1 `collector_profiles_table` (EXISTS)
+```typescript
+{
+  // Primary Keys
+  userId: string (PK),
+  
+  // Identity
+  email: string,
+  username: string,
+  fullName: string,
+  givenName: string,
+  familyName: string,
+  displayName: string,              // Public name
+  phoneNumber?: string,
+  
+  // Profile
+  bio?: string,
+  profileImageUrl?: string,
+  
+  // Location
+  location: {
+    country: string,
+    state: string,
+    city: string,
+    zipCode?: string,
+    timezone: string,
+  },
+  
+  // Privacy
+  profileVisibility: 'public' | 'makers_only' | 'private',
+  showPurchaseHistory: boolean,
+  showCollections: boolean,
+  
+  // Verification
+  emailVerified: boolean,
+  emailVerifiedAt?: string,
+  
+  // Stats (denormalized)
+  totalPurchases: number,
+  totalSpent: number,
+  followingCount: number,
+  savedItemsCount: number,
+  collectionsCount: number,
+  
+  // Timestamps
+  createdAt: string,
+  updatedAt: string,
+}
+```
+
+---
+
+### 4.2 `collector_taste_profile_table` (NEW)
+```typescript
+{
+  // Primary Keys
+  collectorUserId: string (PK),
+  profileVersion: string (SK),      // "v1", "v2", "v3"
+  
+  snapshotDate: string,
+  
+  // Aesthetic Preferences
+  aestheticPreferences: {
+    dominantStyles: Array<{
+      style: string,
+      affinity: number,
+    }>,
+    colorAffinityScores: {
+      [hex: string]: number,
+    },
+    texturePreferences: {
+      smooth: number,
+      rough: number,
+      organic: number,
+      geometric: number,
+    },
+    scalePreferences: string,
+    patternComplexity: string,
+  },
+  
+  // Ratios
+  functionalVsDecorative: number,
+  modernVsTraditional: number,
+  naturalVsSynthetic: number,
+  symmetryVsAsymmetry: number,
+  
+  // Values
+  valueAlignment: {
+    sustainability: number,
+    localArtisan: number,
+    traditionalMethods: number,
+    modernInnovation: number,
+    storyAndHeritage: number,
+    investmentValue: number,
+  },
+  
+  // Budget
+  budgetProfiles: {
+    everydayItems: { min: number, max: number },
+    specialOccasions: { min: number, max: number },
+    investmentPieces: { min: number, max: number },
+  },
+  
+  // Evolution
+  tasteEvolutionVector: {
+    changingTowards: string[],
+    changingAway: string[],
+    stabilizedOn: string[],
+  },
+  
+  // Context
+  lifestageContext?: string,
+  styleConfidenceLevel: number,
+  
+  // Timestamps
+  createdAt: string,
+  lastUpdated: string,
+}
+```
+
+**GSI1**: `dominantStyles` (PK) + `collectorUserId` (SK)
+**GSI2**: `valueAlignment.sustainability` (PK) + `collectorUserId` (SK)
+
+---
+
+### 4.3 `collector_acquisition_strategy_table` (NEW)
+```typescript
+{
+  // Primary Keys
+  collectorUserId: string (PK),
+  strategyPeriod: string (SK),      // "2026-02"
+  
+  // Budget
+  monthlyBudget: number,
+  budgetByCategory: {
+    [category: string]: number,
+  },
+  
+  // Goals
+  acquisitionGoals: Array<{
+    goal: string,
+    priority: number,
+    deadline?: string,
+    progress: number,
+  }>,
+  
+  // Gaps
+  collectionGaps: Array<{
+    category: string,
+    description: string,
+    targetPrice: number,
+    urgency: string,
+  }>,
+  
+  // Targets
+  targetMakers: Array<{
+    makerId: string,
+    reason: string,
+    targetItem?: string,
+    maxPrice: number,
+  }>,
+  
+  // Watch List
+  watchList: Array<{
+    productId: string,
+    currentPrice: number,
+    targetPrice: number,
+    expiryDate?: string,
+  }>,
+  
+  // Strategy
+  investmentVsPersonal: number,
+  timeHorizon: string,
+  
+  // Tolerance
+  priceToleranceByUrgency: {
+    low: number,
+    medium: number,
+    high: number,
+  },
+  
+  // Seasonal
+  seasonalBudgetAllocation: {
+    q1: number,
+    q2: number,
+    q3: number,
+    q4: number,
+  },
+  
+  // Thresholds
+  splurgeThreshold: number,
+  dealThreshold: number,
+  
+  // Financial Events
+  financialEvents: Array<{
+    date: string,
+    type: string,
+    amount: number,
+    allocatedToBuying: number,
+  }>,
+  
+  // Timestamps
+  createdAt: string,
+  updatedAt: string,
+}
+```
+
+**GSI1**: `monthlyBudget` (PK) + `collectorUserId` (SK)
+**GSI2**: `timeHorizon` (PK) + `strategyPeriod` (SK)
+
+---
+
+### 4.4 `collector_community_influence_table` (NEW)
+```typescript
+{
+  // Primary Keys
+  collectorUserId: string (PK),
+  influenceType: string (SK),       // "tastemaker", "expert", "curator", "mentor"
+  
+  timestamp: string,
+  
+  // Status
+  influenceScore: number,
+  tastemakerStatus: 'novice' | 'enthusiast' | 'tastemaker' | 'curator' | 'authority',
+  verifiedCollector: boolean,
+  
+  // Collection
+  collectionPrestige: number,
+  publicCollectionViews: number,
+  followersWhoActOnRecommendations: number,
+  
+  // Exhibitions
+  curatedExhibitions: Array<{
+    title: string,
+    date: string,
+    venue: string,
+    visitorsCount: number,
+  }>,
+  
+  // Speaking
+  speakingEngagements: Array<{
+    title: string,
+    date: string,
+    topic: string,
+    audience: number,
+  }>,
+  
+  // Content
+  publishedContent: Array<{
+    type: 'article' | 'video' | 'podcast',
+    title: string,
+    platform: string,
+    views: number,
+    date: string,
+  }>,
+  
+  // Mentorship
+  mentorshipRelations: Array<{
+    menteeId: string,
+    startDate: string,
+    focus: string,
+  }>,
+  
+  // Expertise
+  expertiseAreas: Array<{
+    area: string,
+    certifications: string[],
+    yearsOfExperience: number,
+  }>,
+  
+  // Community
+  communityContributions: {
+    forumPosts: number,
+    helpfulReviews: number,
+    guidesWritten: number,
+  },
+  
+  // Validation
+  authenticityValidations: number,
+  disputeResolutions: number,
+  makerDiscoveries: number,
+  
+  // Timestamps
+  createdAt: string,
+  updatedAt: string,
+}
+```
+
+**GSI1**: `tastemakerStatus` (PK) + `influenceScore` (SK)
+**GSI2**: `expertiseAreas` (PK) + `influenceScore` (SK)
+**GSI3**: `verifiedCollector` (PK) + `influenceScore` (SK)
+
+---
+
+## 5. VALIDATION RULES
+
+### Profile Data
+- displayName: 3-50 chars
+- bio: max 500 chars
+- email: valid email format
+- phoneNumber: E.164 format (if provided)
+
+### Taste Profile Data
+- affinity scores: 0.0-1.0
+- texture preferences: 0-10
+- value alignment: 1-10
+- styleConfidenceLevel: 1-10
+
+### Strategy Data
+- monthlyBudget: > 0
+- priority: 1-5
+- progress: 0-100
+- ratios: 0-1
+- percentages: 0-100
+
+---
+
+## 6. API ENDPOINTS NEEDED
+
+### Profile Management
+- `POST /collector/profile/setup` - Initial profile setup
+- `PUT /collector/profile/update` - Update profile
+- `GET /collector/profile/:userId` - Get profile
+
+### Taste Profile Management
+- `POST /collector/taste-profile/create` - Create taste profile
+- `PUT /collector/taste-profile/update/:version` - Update profile
+- `GET /collector/taste-profile/current` - Get current version
+
+### Strategy Management
+- `POST /collector/strategy/setup` - Set monthly strategy
+- `PUT /collector/strategy/update/:period` - Update strategy
+- `GET /collector/strategy/:period` - Get strategy
+
+### Saved Items
+- `POST /collector/saved-items/add` - Save product
+- `DELETE /collector/saved-items/remove/:productId` - Unsave
+- `GET /collector/saved-items/list` - List saved items
+
+### Follows
+- `POST /collector/follows/add` - Follow maker
+- `DELETE /collector/follows/remove/:makerId` - Unfollow
+- `GET /collector/follows/list` - List followed makers
+
+### Wishlists
+- `POST /collector/wishlist/add` - Add to wishlist
+- `DELETE /collector/wishlist/remove/:productId` - Remove
+- `GET /collector/wishlist/list` - List wishlist items
+
+### Collections
+- `POST /collector/collection/create` - Create collection
+- `POST /collector/collection/add-item` - Add item
+- `DELETE /collector/collection/remove-item` - Remove item
+- `GET /collector/collection/:collectionId` - Get collection
+- `GET /collector/collections/list` - List all collections
+
+---
+
+## 7. FRONTEND FORMS NEEDED
+
+1. **Onboarding Flow**
+   - Step 1: Basic Profile (displayName, location)
+   - Step 2: Interests & Budget Range
+   - Step 3: Taste Profile Quiz (aesthetic preferences)
+   - Step 4: Profile Media Upload
+   
+2. **Settings Dashboard**
+   - Profile Settings
+   - Taste Profile Management
+   - Strategy & Budget Planning
+   - Privacy Settings
+   
+3. **Collector Dashboard**
+   - Saved Items
+   - Followed Makers
+   - Wishlists
+   - Collections Manager
+   - Recommendations Feed
+
+---
+
+## NEXT STEPS
+
+1. Create the 3 new tables (taste profile, strategy, influence)
+2. Implement GraphQL schema for new tables
+3. Create Lambda functions for CRUD operations
+4. Set up EventBridge consumers for events
+5. Build frontend forms for data capture
+6. Test event flow end-to-end
+
+---
+
+Last Updated: 2026-01-31
+Domain Owner: Collector Domain Team
+Status: 📋 Ready for Implementation

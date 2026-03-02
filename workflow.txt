@@ -1,0 +1,308 @@
+================================================================================
+COLLECTOR DOMAIN - WORKFLOW DOCUMENTATION
+================================================================================
+
+1. WORKFLOW
+================================================================================
+
+The Collector Domain manages collector behavior, preferences, engagement, and personal collections.
+
+Main Workflows:
+
+1. Collector Profile Management
+   - Get collector profile information
+   - Update collector profile (shipping address, preferences)
+   - Profile created automatically when user registers as collector
+
+2. Saved Items Management
+   - Save product to saved items
+   - Unsave product from saved items
+   - List all saved items for collector
+
+3. Maker Following
+   - Follow a maker
+   - Unfollow a maker
+   - List all makers followed by collector
+   - List all followers of a maker (via GSI)
+
+4. Collections Management
+   - Create custom collection
+   - Update collection details
+   - Delete collection
+   - Get collection details
+   - List all collections for collector
+
+5. Collection Items Management
+   - Add product to collection
+   - Remove product from collection
+   - List all items in a collection
+
+6. Wishlist Management
+   - Add product to wishlist
+   - Remove product from wishlist
+   - List all wishlist items
+
+================================================================================
+2. OPERATIONS TYPE
+================================================================================
+
+Operation Types:
+- Profile Operations: Get collector profile, update collector profile
+- Saved Items Operations: Save item, unsave item, list saved items
+- Follow Operations: Follow maker, unfollow maker, list follows
+- Collection Operations: Create, update, delete, get, list collections
+- Collection Items Operations: Add item, remove item, list items
+- Wishlist Operations: Add to wishlist, remove from wishlist, list wishlist
+
+API Type: GraphQL API (AppSync)
+
+================================================================================
+3. OUTPUT OF EACH OPERATION (NO CODE, JUST DESCRIPTION)
+================================================================================
+
+3.1 Get Collector Profile Operation
+   Input: Collector user ID (from authenticated context)
+   Process:
+     - Retrieves collector profile from collector_profiles table
+     - Returns profile data including preferences and shipping address
+   Output:
+     - Success: Collector profile object with user_id, default_shipping_address, preferences, rating_score, timestamps
+     - Error: Profile not found (404)
+
+3.2 Update Collector Profile Operation
+   Input: Collector user ID, updated profile fields (shipping address, preferences)
+   Process:
+     - Validates input data
+     - Updates collector profile in collector_profiles table
+     - Updates updated_at timestamp
+   Output:
+     - Success: Updated collector profile object
+     - Error: Validation errors (400), unauthorized access (403)
+
+3.3 Save Item Operation
+   Input: Collector user ID, product ID
+   Process:
+     - Creates record in saved_items table
+     - Sets saved_at timestamp
+     - Optionally adds notes
+   Output:
+     - Success: Saved item record with collector_user_id, product_id, saved_at, notes
+     - Error: Item already saved, invalid product ID
+
+3.4 Unsave Item Operation
+   Input: Collector user ID, product ID
+   Process:
+     - Deletes record from saved_items table
+   Output:
+     - Success: Deletion confirmation
+     - Error: Item not found in saved items
+
+3.5 List Saved Items Operation
+   Input: Collector user ID, pagination parameters
+   Process:
+     - Queries saved_items table by collector_user_id
+     - Returns paginated list of saved items
+   Output:
+     - Success: List of saved items with product_id, saved_at, notes, pagination info
+     - Error: Invalid pagination parameters
+
+3.6 Follow Maker Operation
+   Input: Collector user ID, maker user ID
+   Process:
+     - Creates record in follows table
+     - Sets followed_at timestamp
+     - Validates maker exists
+   Output:
+     - Success: Follow record with collector_user_id, maker_user_id, followed_at
+     - Error: Already following, invalid maker ID
+
+3.7 Unfollow Maker Operation
+   Input: Collector user ID, maker user ID
+   Process:
+     - Deletes record from follows table
+   Output:
+     - Success: Unfollow confirmation
+     - Error: Not following this maker
+
+3.8 List Follows Operation
+   Input: Collector user ID, pagination parameters
+   Process:
+     - Queries follows table by collector_user_id
+     - Returns paginated list of followed makers
+   Output:
+     - Success: List of followed makers with maker_user_id, followed_at, pagination info
+     - Error: Invalid pagination parameters
+
+3.9 Create Collection Operation
+   Input: Collector user ID, collection name, description (optional)
+   Process:
+     - Generates unique collection_id (UUID)
+     - Creates record in collections table
+     - Sets created_at and updated_at timestamps
+   Output:
+     - Success: Collection object with collection_id, name, description, timestamps
+     - Error: Validation errors (name required, name too long)
+
+3.10 Update Collection Operation
+   Input: Collector user ID, collection ID, updated fields (name, description)
+   Process:
+     - Validates collection belongs to collector
+     - Updates collection record
+     - Updates updated_at timestamp
+   Output:
+     - Success: Updated collection object
+     - Error: Collection not found (404), unauthorized access (403)
+
+3.11 Delete Collection Operation
+   Input: Collector user ID, collection ID
+   Process:
+     - Validates collection belongs to collector
+     - Deletes all items in collection from collection_items table
+     - Deletes collection from collections table
+   Output:
+     - Success: Deletion confirmation
+     - Error: Collection not found (404), unauthorized access (403)
+
+3.12 Get Collection Operation
+   Input: Collector user ID, collection ID
+   Process:
+     - Retrieves collection from collections table
+     - Validates collection belongs to collector
+   Output:
+     - Success: Collection object with all details
+     - Error: Collection not found (404), unauthorized access (403)
+
+3.13 List Collections Operation
+   Input: Collector user ID, pagination parameters
+   Process:
+     - Queries collections table by collector_user_id
+     - Returns paginated list of collections
+   Output:
+     - Success: List of collections with collection_id, name, description, timestamps, pagination info
+     - Error: Invalid pagination parameters
+
+3.14 Add Item to Collection Operation
+   Input: Collector user ID, collection ID, product ID, notes (optional)
+   Process:
+     - Validates collection belongs to collector
+     - Creates record in collection_items table
+     - Sets added_at timestamp
+   Output:
+     - Success: Collection item record with collection_id, product_id, added_at, notes
+     - Error: Collection not found, item already in collection, invalid product ID
+
+3.15 Remove Item from Collection Operation
+   Input: Collector user ID, collection ID, product ID
+   Process:
+     - Validates collection belongs to collector
+     - Deletes record from collection_items table
+   Output:
+     - Success: Removal confirmation
+     - Error: Collection not found, item not in collection
+
+3.16 List Collection Items Operation
+   Input: Collector user ID, collection ID, pagination parameters
+   Process:
+     - Validates collection belongs to collector
+     - Queries collection_items table by collection_id
+     - Returns paginated list of items
+   Output:
+     - Success: List of collection items with product_id, added_at, notes, pagination info
+     - Error: Collection not found, invalid pagination parameters
+
+3.17 Add to Wishlist Operation
+   Input: Collector user ID, product ID, notes (optional)
+   Process:
+     - Creates record in wishlists table
+     - Sets added_at timestamp
+   Output:
+     - Success: Wishlist item record with collector_user_id, product_id, added_at, notes
+     - Error: Item already in wishlist, invalid product ID
+
+3.18 Remove from Wishlist Operation
+   Input: Collector user ID, product ID
+   Process:
+     - Deletes record from wishlists table
+   Output:
+     - Success: Removal confirmation
+     - Error: Item not in wishlist
+
+3.19 List Wishlists Operation
+   Input: Collector user ID, pagination parameters
+   Process:
+     - Queries wishlists table by collector_user_id
+     - Returns paginated list of wishlist items
+   Output:
+     - Success: List of wishlist items with product_id, added_at, notes, pagination info
+     - Error: Invalid pagination parameters
+
+================================================================================
+4. GENERATED EVENTS - WHO, HOW TO BE COMMUNICATED WITH WHICH OTHER DOMAIN
+================================================================================
+
+Events Published:
+- ItemSaved: Published when collector saves a product
+  - Who: Collector Domain
+  - How: EventBridge event bus
+  - Communicated with: Discovery Domain, Notification Domain
+  - Purpose: Update discovery ranking signals, notify maker of save
+  - Event Data: collector_user_id, product_id, saved_at
+
+- ItemUnsaved: Published when collector unsaves a product
+  - Who: Collector Domain
+  - How: EventBridge event bus
+  - Communicated with: Discovery Domain
+  - Purpose: Update discovery ranking signals
+  - Event Data: collector_user_id, product_id, unsaved_at
+
+- MakerFollowed: Published when collector follows a maker
+  - Who: Collector Domain
+  - How: EventBridge event bus
+  - Communicated with: Discovery Domain, Notification Domain, Maker Domain
+  - Purpose: Update discovery signals, notify maker, update maker follower count
+  - Event Data: collector_user_id, maker_user_id, followed_at
+
+- MakerUnfollowed: Published when collector unfollows a maker
+  - Who: Collector Domain
+  - How: EventBridge event bus
+  - Communicated with: Discovery Domain, Maker Domain
+  - Purpose: Update discovery signals, update maker follower count
+  - Event Data: collector_user_id, maker_user_id, unfollowed_at
+
+- CollectionCreated: Published when collector creates a collection
+  - Who: Collector Domain
+  - How: EventBridge event bus
+  - Communicated with: Discovery Domain (if collection is public)
+  - Purpose: Index public collections for discovery
+  - Event Data: collector_user_id, collection_id, name, created_at
+
+- CollectorPreferenceUpdated: Published when collector updates preferences
+  - Who: Collector Domain
+  - How: EventBridge event bus
+  - Communicated with: Discovery Domain, Notification Domain
+  - Purpose: Update recommendation algorithms, notification preferences
+  - Event Data: collector_user_id, preferences, updated_at
+
+Events Consumed:
+- UserRegistered: From Auth Essentials / Identity Domain
+  - Purpose: Automatically create collector profile when user registers
+  - Action: Create collector profile with default preferences
+
+- ProductPublished: From Product Domain
+  - Purpose: Validate product exists when saving/following
+  - Action: Validate product_id before saving to collections/wishlists
+
+Cross-Domain Communication:
+- Discovery Domain: Receives ItemSaved, ItemUnsaved, MakerFollowed, MakerUnfollowed, CollectionCreated, CollectorPreferenceUpdated events to update search indexes and recommendation algorithms
+- Notification Domain: Receives ItemSaved, MakerFollowed events to send notifications to makers
+- Maker Domain: Receives MakerFollowed, MakerUnfollowed events to update follower counts
+- Product Domain: Validates product_id when saving items (via direct API call or event validation)
+
+Communication Method:
+- EventBridge: Primary method for asynchronous event communication
+- AppSync GraphQL: Direct queries from frontend and other domains
+- SSM Parameters: No exports (read-only domain)
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

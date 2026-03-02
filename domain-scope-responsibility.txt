@@ -1,0 +1,220 @@
+================================================================================
+COLLECTOR DOMAIN - SCOPE & RESPONSIBILITY
+================================================================================
+
+DOMAIN PURPOSE
+================================================================================
+
+The Collector Domain manages collector behavior, preferences, engagement, and personal collections. This domain is responsible for all collector-specific data and activities that drive user engagement and time-on-site.
+
+================================================================================
+WHAT THIS DOMAIN OWNS
+================================================================================
+
+1. Collector Profiles
+   - Collector profile data (shipping address, preferences)
+   - Collector rating score
+   - Collector-specific settings
+
+2. Saved Items
+   - Products saved by collectors
+   - Saved items metadata (saved_at, notes)
+   - Saved items relationships
+
+3. Maker Following
+   - Follow relationships between collectors and makers
+   - Follow timestamps
+   - Follower counts (via GSI)
+
+4. Collections
+   - Custom collections created by collectors
+   - Collection metadata (name, description)
+   - Collection items (products in collections)
+
+5. Wishlists
+   - Wishlist items
+   - Wishlist metadata
+
+6. Collector Activity Data
+   - Saved items activity
+   - Follow activity
+   - Collection activity
+   - Wishlist activity
+
+================================================================================
+WHAT THIS DOMAIN IS RESPONSIBLE FOR
+================================================================================
+
+1. Collector Profile Management
+   - Creating collector profiles (on user registration)
+   - Updating collector profiles
+   - Managing collector preferences
+   - Managing shipping addresses
+
+2. Engagement Features
+   - Managing saved items
+   - Managing maker follows
+   - Managing collections
+   - Managing wishlists
+
+3. Activity Tracking
+   - Tracking saved items
+   - Tracking follow actions
+   - Tracking collection activity
+   - Publishing engagement events
+
+4. Data Integrity
+   - Ensuring one profile per collector
+   - Validating saved items references
+   - Validating follow relationships
+   - Maintaining collection consistency
+
+5. Event Publishing
+   - Publishing ItemSaved events
+   - Publishing ItemUnsaved events
+   - Publishing MakerFollowed events
+   - Publishing MakerUnfollowed events
+   - Publishing CollectionCreated events
+   - Publishing CollectorPreferenceUpdated events
+
+================================================================================
+WHAT THIS DOMAIN DOES NOT OWN
+================================================================================
+
+1. User Authentication
+   - User accounts (Auth Essentials Domain)
+   - User identity (Identity Domain)
+
+2. Products
+   - Product data (Shelf Domain)
+   - Product availability (Shelf Domain)
+   - Product details (Shelf Domain)
+
+3. Orders
+   - Order creation (Order Domain)
+   - Order management (Order Domain)
+   - Order history (Order Domain)
+
+4. Payments
+   - Payment processing (Payment Domain)
+   - Payment methods (Payment Domain)
+
+5. Reviews
+   - Review creation (Review Trust Domain)
+   - Review data (Review Trust Domain)
+
+6. Maker Profiles
+   - Maker profile data (Maker Domain)
+   - Maker verification (Verification Trust Domain)
+
+7. Notifications
+   - Notification delivery (Notification Domain)
+   - Notification preferences (Notification Domain)
+
+================================================================================
+DOMAIN BOUNDARIES
+================================================================================
+
+1. Input Boundaries
+   - Receives collector profile management requests
+   - Receives saved items requests
+   - Receives follow/unfollow requests
+   - Receives collection management requests
+   - Receives UserRegistered events from Auth Essentials
+   - Does NOT receive product data directly (validates via events)
+
+2. Output Boundaries
+   - Provides collector profile data
+   - Provides saved items data
+   - Provides follow data
+   - Provides collection data
+   - Publishes engagement events
+   - Does NOT provide product details (references only)
+
+3. Data Boundaries
+   - Owns:
+      - `collector_profiles` table (source-of-truth for collector profile, addresses, delivery preferences)
+      - `saved_items` table (references to products saved by collectors)
+      - `follows` table (raw follow relationship records: one record per collector->maker follow)
+      - `collections` and `collection_items` (user-created collections and their membership)
+      - `wishlists` table
+   - Does NOT own:
+      - Product data (Product Domain)
+      - Maker profile data (Maker Domain)
+      - Aggregated follower counts (Maker Domain owns materialized follower counters)
+   - Integration Notes:
+      - Publishes `MakerFollowed`/`MakerUnfollowed` events for downstream consumers.
+      - Other domains (e.g., Maker Domain) consume follow events to maintain aggregated counters and read-models; they must not write into Collector tables.
+
+4. Integration Boundaries
+   - Consumes `UserRegistered` events to create collector profiles
+   - Consumes `ProductPublished` events to validate products
+   - Publishes engagement events for Discovery and Notification domains
+   - Does NOT directly access other domain databases
+
+================================================================================
+KEY RESPONSIBILITIES
+================================================================================
+
+1. Manage Collector Engagement
+   - Enable collectors to save products
+   - Enable collectors to follow makers
+   - Enable collectors to create collections
+   - Enable collectors to manage wishlists
+
+2. Maintain Collector Data
+   - Ensure collector profile accuracy
+   - Maintain saved items consistency
+   - Maintain follow relationships
+   - Maintain collection integrity
+
+3. Drive Discovery
+   - Publish engagement events for discovery algorithms
+   - Provide data for recommendation systems
+   - Track collector preferences for personalization
+
+4. Support User Experience
+   - Provide quick access to saved items
+   - Enable easy maker following
+   - Support collection organization
+   - Enable wishlist management
+
+================================================================================
+CROSS-DOMAIN DEPENDENCIES
+================================================================================
+
+This Domain Provides To:
+- Discovery Domain: ItemSaved, ItemUnsaved, MakerFollowed, MakerUnfollowed, CollectionCreated, CollectorPreferenceUpdated events
+- Notification Domain: ItemSaved, MakerFollowed events
+- Maker Domain: MakerFollowed, MakerUnfollowed events (for follower counts)
+
+This Domain Consumes From:
+- Auth Essentials Domain: UserRegistered events (to create collector profiles)
+- Product Domain: ProductPublished events (to validate products when saving)
+
+================================================================================
+TECHNICAL SCOPE
+================================================================================
+
+Technologies:
+- DynamoDB (collector_profiles, saved_items, follows, collections, collection_items, wishlists)
+- AppSync GraphQL API
+- Lambda functions for business logic
+
+Data Storage:
+- collector_profiles table
+- saved_items table
+- follows table
+- collections table
+- collection_items table
+- wishlists table
+
+API Type:
+- GraphQL API (AppSync)
+
+Event Communication:
+- EventBridge for publishing and consuming events
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

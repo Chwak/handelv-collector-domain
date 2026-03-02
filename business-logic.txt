@@ -1,0 +1,219 @@
+# Collector Domain - Business Logic
+
+## Domain Purpose
+The Collector Domain manages collector behavior, preferences, engagement, and personal collections. This domain is a time-on-site driver that focuses on collector experience and retention.
+
+## Data Layer Ownership
+The Collector Domain owns and manages the following DynamoDB tables:
+- collector_profiles: Collector profile information, shipping addresses, and preferences
+- saved_items: Items saved by collectors for later
+- follows: Collector-to-maker follow relationships
+- wishlists: Collector wishlists
+- collections: Collector-created collections
+- collection_items: Items within collections
+
+## Business Rules
+
+### 1. Collector Profile Management
+- A collector profile is created automatically when a user registers with the collector role
+- Collector profiles can only be updated by the profile owner
+- Default shipping address is optional but required for order placement
+- Rating score is calculated from reviews received as a collector
+
+### 2. Saved Items
+- Collectors can save any active product
+- Saved items are personal and private to each collector
+- Collectors can add notes to saved items
+- Saved items can be removed at any time
+
+### 3. Follow Relationships
+- Collectors can follow makers to receive updates
+- Follow relationships are bidirectional in terms of visibility (collector sees maker's updates, maker sees follower count)
+- Collectors can unfollow makers at any time
+- Follow count is maintained for makers (read-only from this domain)
+
+### 4. Wishlists
+- Collectors can create multiple wishlists
+- Wishlists are private by default
+- Items can be added to wishlists with optional notes
+- Wishlists can be shared via link (optional feature)
+
+### 5. Collections
+- Collectors can create custom collections to organize saved items
+- Collections can have names and descriptions
+- Items can be added to multiple collections
+- Collections are private by default
+
+## Data Layer Interactions
+
+### Read Operations
+- Read collector profile by user_id
+- Read saved items by collector_user_id
+- Read follow relationships by collector_user_id or maker_user_id
+- Read wishlists by collector_user_id
+- Read collections by collector_user_id
+- Read collection items by collection_id
+
+### Write Operations
+- Create/update collector profile
+- Add/remove saved items
+- Create/delete follow relationships
+- Create/update/delete wishlists
+- Create/update/delete collections
+- Add/remove items from collections
+
+### Data Integrity Rules
+- All operations must validate user_id exists in Identity Domain (via events)
+- Saved items must reference valid product_id from Product Domain
+- Follow relationships must reference valid maker_user_id from Maker Domain
+- Collection items must reference valid product_id from Product Domain
+- All timestamps must be in ISO 8601 format
+
+## Event-Driven Communication
+
+### Events Published
+- CollectorProfileCreated: When a collector profile is first created
+- CollectorProfileUpdated: When collector profile information changes
+- ItemSaved: When a collector saves a product
+- ItemUnsaved: When a collector removes a saved item
+- MakerFollowed: When a collector follows a maker
+- MakerUnfollowed: When a collector unfollows a maker
+- WishlistCreated: When a collector creates a wishlist
+- CollectionCreated: When a collector creates a collection
+
+### Events Consumed
+- UserRegistered: From Identity Domain - triggers collector profile creation
+- ProductPublished: From Product Domain - available for saving
+- ProductUnpublished: From Product Domain - may affect saved items visibility
+- MakerVerified: From Maker Domain - affects follow relationships
+
+## Cross-Domain Boundaries
+
+### What This Domain Owns
+- Collector profiles and preferences
+- Saved items and collections
+- Follow relationships (collector side)
+- Collector engagement data
+
+### What This Domain Does NOT Own
+- User authentication (Identity Domain)
+- Products (Product Domain)
+- Orders (Order Domain)
+- Payments (Payment Domain)
+- Reviews (Review & Trust Domain)
+- Maker profiles (Maker Domain)
+
+## Business Logic Constraints
+1. A collector can only save active products
+2. Follow relationships are one-way (collector -> maker)
+3. Collections must have unique names per collector
+4. Saved items are automatically removed if product is deleted (via event)
+5. Collector rating is read-only and calculated by Review & Trust Domain
+
+## Domain Structure & Implementation
+
+### Directory Structure
+The Collector Domain follows a structure similar to `/Users/jred/AWS/aedcor-backend/support_backend/lib`:
+
+```
+lib/
+├── constructs/
+│   ├── dynamodb/
+│   │   └── collector-tables/
+│   │       └── collector-tables-construct.ts
+│   ├── lambda/
+│   │   └── collector/
+│   │       ├── get-collector-profile/
+│   │       ├── update-collector-profile/
+│   │       ├── save-item/
+│   │       ├── unsave-item/
+│   │       ├── follow-maker/
+│   │       ├── unfollow-maker/
+│   │       ├── create-wishlist/
+│   │       ├── create-collection/
+│   │       └── event-consumer/
+│   └── appsync/
+│       └── collector-appsync/
+│           └── collector-appsync-construct.ts
+├── functions/
+│   ├── lambda/
+│   │   └── collector/
+│   │       ├── get-collector-profile/
+│   │       │   └── get-collector-profile-lambda.js
+│   │       ├── update-collector-profile/
+│   │       │   └── update-collector-profile-lambda.js
+│   │       ├── save-item/
+│   │       │   └── save-item-lambda.js
+│   │       ├── unsave-item/
+│   │       │   └── unsave-item-lambda.js
+│   │       ├── follow-maker/
+│   │       │   └── follow-maker-lambda.js
+│   │       ├── unfollow-maker/
+│   │       │   └── unfollow-maker-lambda.js
+│   │       ├── create-wishlist/
+│   │       │   └── create-wishlist-lambda.js
+│   │       ├── create-collection/
+│   │       │   └── create-collection-lambda.js
+│   │       └── event-consumer/
+│   │           └── event-consumer-lambda.js
+│   └── appsync-resolvers/
+│       └── collector/
+│           ├── get-collector-profile-resolver.js
+│           ├── update-collector-profile-resolver.js
+│           ├── save-item-resolver.js
+│           └── list-saved-items-resolver.js
+└── utils/
+    ├── response-utils.ts
+    ├── validation-utils.ts
+    └── event-publisher.ts
+```
+
+### Data Layer Interaction Patterns
+
+#### Direct Data Access
+- **Collector Profiles**: Direct DynamoDB access via `collector_profiles` table using `user_id` as partition key
+- **Saved Items**: Direct DynamoDB access via `saved_items` table using `collector_user_id` (PK) and `product_id` (SK)
+- **Follows**: Direct DynamoDB access via `follows` table using `collector_user_id` (PK) and `maker_user_id` (SK)
+- **Wishlists**: Direct DynamoDB access via `wishlists` table using `collector_user_id` (PK) and `product_id` (SK)
+- **Collections**: Direct DynamoDB access via `collections` table using `collector_user_id` (PK) and `collection_id` (SK)
+- **Collection Items**: Direct DynamoDB access via `collection_items` table using `collection_id` (PK) and `product_id` (SK)
+
+#### Query Patterns
+- **Get collector profile**: Single item read by `user_id`
+- **List saved items**: Query by `collector_user_id` with optional filters
+- **List follows**: Query by `collector_user_id` or GSI query by `maker_user_id`
+- **List wishlists**: Query by `collector_user_id`
+- **List collections**: Query by `collector_user_id`
+- **List collection items**: Query by `collection_id`
+
+#### Write Patterns
+- **Create/Update collector profile**: PutItem with conditional checks
+- **Save/Unsave item**: PutItem/DeleteItem with existence validation
+- **Follow/Unfollow maker**: PutItem/DeleteItem with validation
+- **Create collection**: PutItem with unique name validation per collector
+- **Add to collection**: PutItem with collection existence check
+
+### Business Logic Implementation
+
+#### Validation Layer
+- All operations validate `user_id` exists in Identity Domain (via event cache or direct check)
+- Saved items validate `product_id` exists and is active (via Product Domain events)
+- Follow operations validate `maker_user_id` exists (via Maker Domain events)
+- Collection operations validate unique names per collector
+
+#### Event Handling
+- **Event Consumer Lambda**: Processes events from other domains
+  - `UserRegistered` → Creates collector profile
+  - `ProductUnpublished` → Removes saved items
+  - `MakerVerified` → Updates follow relationships visibility
+
+#### Data Consistency
+- All writes use DynamoDB transactions for multi-table operations
+- Eventual consistency accepted for read-after-write scenarios
+- GSI queries may have eventual consistency (acceptable for follower counts)
+
+#### Error Handling
+- Invalid `user_id` → Return 404 Not Found
+- Invalid `product_id` → Return 400 Bad Request
+- Duplicate operations → Return 409 Conflict
+- Validation failures → Return 400 Bad Request with details

@@ -1,0 +1,244 @@
+# Collector Domain - Data Layer (Redesigned)
+
+Purpose: support Collector-owned source-of-truth for collector profiles and raw engagement events (saves, follows, wishlist, collections) while enabling other domains to build read-models from events.
+
+Database: collector_db
+CDK Stack: collector-stack
+
+Design summary:
+- Adopt an engagement facts / engagement state / engagement activity pattern for engagement workloads:
+  - `collector_engagement_facts` (immutable facts; append-only)
+  - `collector_engagement_state` (materialized counters and latest profile snapshot)
+  - `collector_engagement_activity` (hot recent activity for feeds, TTL)
+- Keep explicit entity tables for collections and collection_items for direct CRUD and sharing.
+- Use event publishing and DynamoDB transactions for atomic writes (facts + state updates + activity entries) and idempotency.
+
+---
+
+## Tables
+
+### `collector_engagement_facts` (append-only facts)
+
+Partition Key: `pk` = `COLLECTOR#<collector_user_id>` (String)
+Sort Key: `sk` = `FACT#<fact_type>#<ts>#<uuid>` (String)
+
+Attributes:
+- `pk` (String) - e.g. `COLLECTOR#u-123`
+- `sk` (String) - e.g. `FACT#SAVE#2026-02-03T12:00:00Z#f-uuid`
+- `fact_type` (String) - `SAVE` | `UNSAVE` | `FOLLOW` | `UNFOLLOW` | `WISHLIST_ADD` | `WISHLIST_REMOVE` | `COLLECTION_ITEM_ADD` | `COLLECTION_ITEM_REMOVE`
+- `collector_user_id` (String)
+- `target_id` (String) - product_id or maker_user_id or collection_id depending on fact
+- `metadata` (Map) - optional (notes, position, priority)
+- `created_at` (String, ISO 8601)
+- `idempotency_key` (String) - optional, for dedup
+
+GSIs:
+- GSI1 (maker reverse lookup): PK `gsi1pk` = `MAKER#<maker_user_id>`, SK `gsi1sk` = `FACT#<fact_type>#<ts>#<uuid>`
+  - Used to get all follow facts for a maker (for follower list backfills)
+
+TTL: None (facts are persistent by design)
+
+Usage:
+- Store immutable engagement events here. Query per-collector or reverse-query per-maker using GSI.
+
+---
+
+### `collector_engagement_state` (materialized current state)
+
+Partition Key: `collector_user_id` (String)
+Sort Key: None
+
+Attributes:
+- `collector_user_id` (String)
+- `profile` (Map) - current profile snapshot (displayName, avatar_url, default_shipping_address, preferences)
+- `counters` (Map)
+  - `saved_count` (Number)
+  - `wishlist_count` (Number)
+  - `follows_count` (Number) - number of makers this collector follows
+  - `collections_count` (Number)
+  - `collection_items_count` (Number)
+- `last_activity_at` (String, ISO 8601)
+- `updated_at` (String, ISO 8601)
+
+GSIs: None (single-item per collector)
+
+TTL: None
+
+Usage:
+- Read-mostly table for quick profile + counters. Updated transactionally when facts are written.
+
+---
+
+### `collector_engagement_activity` (hot activity feed)
+
+Partition Key: `collector_user_id` (String)
+Sort Key: `activity_ts#<ts>#<uuid>` (String)
+
+Attributes:
+- `collector_user_id` (String)
+- `activity_type` (String) - `SAVE` | `FOLLOW` | `COLLECTION_ADD` | `WISHLIST_ADD` | etc.
+- `payload` (Map) - short denormalized payload for fast feeds (product title, maker handle)
+- `created_at` (String, ISO 8601)
+- `expires_at` (Number) - TTL epoch seconds (recommended 30 days)
+
+GSIs: None
+
+TTL: `expires_at` (set to short retention, e.g., 30d)
+
+Usage:
+- Fast recent-activity feed per collector; supports pagination by SK.
+
+---
+
+### `collections` (CRUD + public sharing)
+
+Partition Key: `collector_user_id` (String)
+Sort Key: `collection_id` (String)
+
+Attributes:
+- `collector_user_id`, `collection_id` (UUID)
+- `name`, `description`, `is_public` (Boolean)
+- `item_count` (Number)
+- `cover_product_id` (String)
+- `tags` (List of Strings)
+- `view_count` (Number)
+- `created_at`, `updated_at` (String)
+
+GSI:
+- GSI1: PK `gsi1pk` = `COLLECTION#<collection_id>`, SK `gsi1sk` = `COLLECTOR#<collector_user_id>` (for public lookup by collection_id)
+
+TTL: None
+
+Usage:
+- CRUD operations for collections; public sharing uses GSI1.
+
+---
+
+### `collection_items` (membership)
+
+Partition Key: `collection_id` (String)
+Sort Key: `product_id` (String)
+
+Attributes:
+- `collection_id`, `product_id`
+- `notes`, `position`, `added_at`
+
+GSI:
+- GSI1: PK `gsi1pk` = `PRODUCT#<product_id>`, SK `gsi1sk` = `COLLECTION#<collection_id>` (find collections containing a product)
+
+TTL: None
+
+Usage:
+- Manage membership and order inside a collection.
+
+---
+
+### `saved_items` (optional fast lookup)
+
+Partition Key: `collector_user_id` (String)
+Sort Key: `product_id` (String)
+
+Attributes:
+- `collector_user_id`, `product_id`, `notes`, `saved_at`
+
+GSI:
+- GSI1: PK `gsi1pk` = `PRODUCT#<product_id>`, SK `gsi1sk` = `SAVED_AT#<saved_at>` (find all savers for a product)
+
+TTL: None
+
+Notes: saves are recorded as facts in `collector_engagement_facts`. This table is a materialized read-model optimized for quick checks (Is product saved?) and profile screens.
+
+---
+
+## Query Patterns (examples)
+
+- Get collector profile + counters: GetItem on `collector_engagement_state` by `collector_user_id`.
+- Check if collector saved a product: GetItem on `saved_items` (`collector_user_id`, `product_id`).
+- Get recent engagement feed: Query `collector_engagement_activity` by `collector_user_id`, sort descending.
+- Get followers of a maker (backfill): Query `collector_engagement_facts` GSI1 where `gsi1pk` = `MAKER#<maker_user_id>` and `fact_type` = `FOLLOW`.
+
+---
+
+## Events Consumed
+
+- `UserRegistered` (Auth Essentials): create initial `collector_engagement_state` row.
+- `ProductDeleted` (Product): delete related saved/collection membership entries (or mark tombstones in facts).
+- `UserDeleted` (Identity): delete collector data (or mark for retention policy).
+
+---
+
+## Events Published
+
+- `ItemSaved` / `ItemUnsaved` (on save/unsave)
+- `MakerFollowed` / `MakerUnfollowed` (on follow/unfollow)
+- `CollectionCreated` / `CollectionUpdated` / `CollectionDeleted`
+- `CollectionItemAdded` / `CollectionItemRemoved`
+
+Event payloads should include `collector_user_id`, `target_id` (product or maker), `fact_id`, and `created_at`.
+
+---
+
+## Implementation Notes
+
+1. Write workflow: use a single DynamoDB `TransactWrite` to
+   - insert a fact into `collector_engagement_facts` (idempotent on `idempotency_key`),
+   - update counters in `collector_engagement_state`, and
+   - insert a row into `collector_engagement_activity` (with TTL) and optionally update `saved_items`/`collection_items` materialized tables.
+
+2. Idempotency: include `idempotency_key` on fact writes to safely retry requests.
+
+3. Read-models: other domains must not write into these tables; they should consume events to build their own aggregates (e.g., Maker builds follower_count).
+
+4. TTL: only `collector_engagement_activity` uses TTL for hot data retention.
+
+5. Access patterns: optimize GSIs to support reverse lookups (product -> savers, maker -> followers) without cross-domain writes.
+
+---
+
+## Migration Strategy
+
+1. Create new engagement tables and materialized read-model tables.
+2. Migrate existing saved/follows/collection items into facts and materialized tables in a backfill job.
+3. Switch lambdas to write via transaction to facts + state + activity.
+
+3. Recalculate summaries
+
+### Phase 3: Event System
+1. Set up EventBridge rules
+2. Implement event consumers
+3. Add summary table updaters
+
+### Phase 4: API Layer
+1. Update Lambda functions
+2. Implement new query patterns
+3. Add bulk operation support
+
+---
+
+## Next Steps
+
+1. **Create CDK stack** with DynamoDB tables and GSIs
+2. **Set up EventBridge rules** for consumed events
+3. **Create Lambda functions** for CRUD operations and event processing
+4. **Implement event-driven summary updates**
+5. **Build API Gateway** endpoints:
+   * `GET /collector/profile`
+   * `PUT /collector/profile`
+   * `GET /collector/saved-items`
+   * `POST /collector/saved-items`
+   * `DELETE /collector/saved-items/{productId}`
+   * `GET /collector/wishlists`
+   * `POST /collector/wishlists`
+   * `DELETE /collector/wishlists/{productId}`
+   * `GET /collector/follows`
+   * `POST /collector/follows`
+   * `DELETE /collector/follows/{makerUserId}`
+   * `GET /collector/collections`
+   * `POST /collector/collections`
+   * `GET /collector/collections/{id}`
+   * `PUT /collector/collections/{id}`
+   * `DELETE /collector/collections/{id}`
+   * `POST /collector/collections/{id}/items`
+   * `DELETE /collector/collections/{id}/items/{productId}`
+   * `GET /collector/summary`
+   * `POST /collector/bulk` (for bulk operations)

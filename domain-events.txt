@@ -1,0 +1,176 @@
+================================================================================
+COLLECTOR DOMAIN - EVENT CATALOG
+================================================================================
+Domain: collector-domain
+Event Source: hand-made.collector-domain
+Last Updated: 2026-02-16
+
+================================================================================
+PRODUCED EVENTS
+================================================================================
+
+Event: collector.profile.created.v1
+Status: ✅ IMPLEMENTED & ACTIVE
+--------------------------------------------------------------------------------
+Description:
+  Published when a collector profile is successfully created in response to 
+  user identity completion or mode switch.
+
+Trigger:
+  - Receives user.identity.completed.v1 with collectorEnabled=true
+  - OR receives user.mode.collector.enabled.v1
+  - Email uniqueness check passes
+
+Republish Lambda:
+  - new-collector-from-auth-lambda → outbox table
+
+Payload Schema:
+  {
+    "userId": "string (UUID)",
+    "email": "string (email format)",
+    "name": "string",
+    "username": "string (optional)",
+    "createdAt": "string (ISO8601 timestamp)",
+    "profileId": "string (same as userId)"
+  }
+
+Consumers:
+  - product-domain (product-event-consumer-lambda) - initialize recommendations
+
+Business Rules:
+  - Email must be unique across all collector profiles (enforced via GSI2-Email)
+  - Idempotency via idempotency table (eventId as key)
+  - Profile creation skipped if email already exists (duplicate user scenario)
+
+--------------------------------------------------------------------------------
+
+Event: collector.profile.updated.v1
+Status: 🔲 PLANNED
+--------------------------------------------------------------------------------
+Description:
+  Will be published when a collector updates their profile information.
+
+Trigger: TBD
+Republish Lambda: TBD
+Payload Schema: TBD
+Consumers: notification-domain
+
+--------------------------------------------------------------------------------
+
+Event: collector.maker.followed.v1
+Status: 🔲 PLANNED
+--------------------------------------------------------------------------------
+Description:
+  Published when collector follows a maker.
+
+Trigger: TBD
+Republish Lambda: TBD
+Payload Schema: TBD
+Consumers: maker-domain, notification-domain
+
+--------------------------------------------------------------------------------
+
+Event: collector.maker.unfollowed.v1
+Status: 🔲 PLANNED
+--------------------------------------------------------------------------------
+Description:
+  Published when collector unfollows a maker.
+
+Trigger: TBD
+Republish Lambda: TBD
+Payload Schema: TBD
+Consumers: maker-domain, notification-domain
+
+--------------------------------------------------------------------------------
+
+Event: collector.item.saved.v1
+Status: 🔲 PLANNED
+--------------------------------------------------------------------------------
+Description:
+  Published when collector saves/favorites a product.
+
+Trigger: TBD
+Republish Lambda: TBD
+Payload Schema: TBD
+Consumers: product-domain, shelf-discovery-domain
+
+--------------------------------------------------------------------------------
+
+Event: collector.item.unsaved.v1
+Status: 🔲 PLANNED
+--------------------------------------------------------------------------------
+Description:
+  Published when collector removes product from favorites.
+
+Trigger: TBD
+Republish Lambda: TBD
+Payload Schema: TBD
+Consumers: product-domain, shelf-discovery-domain
+
+================================================================================
+CONSUMED EVENTS
+================================================================================
+
+Event: user.identity.completed.v1
+Source: hand-made.auth-essentials
+--------------------------------------------------------------------------------
+Handler Lambda: new-collector-from-auth-lambda
+EventBridge Rule Filter:
+  - detail.payload.collectorEnabled = [true]
+
+Action:
+  1. Check email uniqueness via GSI2-Email index
+  2. If duplicate, skip creation and mark idempotent
+  3. If unique, create collector profile in collector_profiles table
+  4. Create default settings in collector_settings table
+  5. Publish collector.profile.created.v1 to outbox
+
+Error Handling:
+  - AccessDeniedException: Lambda requires dynamodb:Query on GSI
+  - ConditionalCheckFailed: Profile already exists (idempotency)
+
+--------------------------------------------------------------------------------
+
+Event: user.mode.collector.enabled.v1
+Source: hand-made.auth-essentials
+--------------------------------------------------------------------------------
+Handler Lambda: new-collector-from-auth-lambda
+EventBridge Rule Filter:
+  - detail.payload.experience = ["collector"]
+
+Action:
+  Same as user.identity.completed.v1 handling
+
+--------------------------------------------------------------------------------
+
+Event: order.placed.v1
+Source: hand-made.order-domain
+Status: 🔲 PLANNED
+--------------------------------------------------------------------------------
+Handler Lambda: TBD
+Action: Update collector order history, spending stats
+
+--------------------------------------------------------------------------------
+
+Event: product.published.v1
+Source: hand-made.product-domain
+Status: 🔲 PLANNED
+--------------------------------------------------------------------------------
+Handler Lambda: TBD
+Action: Notify followers, update discovery feed
+
+================================================================================
+DATA PROTECTION & UNIQUENESS
+================================================================================
+
+Email Uniqueness:
+  - GSI2-Email index on collector_profiles table
+  - Pre-creation check via QueryCommand
+  - Prevents duplicate profiles with same email but different userIds
+
+Idempotency:
+  - Idempotency table with eventId as partition key
+  - TTL: 24 hours
+  - Prevents duplicate processing of same event
+
+================================================================================

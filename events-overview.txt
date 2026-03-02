@@ -1,0 +1,17 @@
+Collector Domain - Events Overview
+Last Updated: 2026-02-15
+
+Produced Events (EventBridge)
+- CollectorProfileCreated
+- MakerFollowed
+- MakerUnfollowed
+- ItemSaved
+- ItemUnsaved
+- CollectionCreated
+- CollectorPreferenceUpdated
+
+Consumed Events (EventBridge)
+- UserRegistrationComplete (from Auth Essentials)
+- OrderPlaced (from Order Domain)
+- ProductPublished (from Product Domain)
+- ReviewReceived (from Review Domain)

@@ -1,0 +1,331 @@
+# Collector Domain - Inter-Domain Data Requirements
+
+## Overview
+This document defines all data that the Collector Domain consumes from other domains via events (SNS, SQS, EventBridge). This represents the **event-driven dependencies** between domains.
+
+**Domain:** Collector Domain  
+**Purpose:** Buyer/collector profiles, taste profiles, and engagement tracking  
+**Last Updated:** 2026-01-31
+
+---
+
+## Data Sources
+
+All data in this file comes from:
+- ✅ **Other domains** (via events: SNS, SQS, EventBridge)
+- ✅ **Event-driven architecture**
+- ❌ **NOT from frontend APIs** (see `frontend-data-requirements.txt`)
+
+---
+
+## 1. EVENTS CONSUMED FROM OTHER DOMAINS
+
+### 1.1 From Auth Domain
+**Event**: `UserRegistrationComplete`  
+**Transport**: Auth Domain → SNS Topic → SQS Queue → Collector Lambda  
+**Trigger**: User completes email verification with collector mode enabled
+
+```typescript
+{
+  event: "UserRegistrationComplete",
+  userId: string,
+  email: string,
+  username: string,
+  verifiedAt: string,
+  makerEnabled: boolean,
+  collectorEnabled: boolean,
+  name: string,
+  givenName: string,
+  familyName: string,
+  phoneNumber?: string,
+}
+```
+
+**Action**: Create initial collector profile  
+**Table**: `collector_profiles`  
+**Business Logic**:
+- Only process if `collectorEnabled === true`
+- Create profile with minimal data
+- Set status to "onboarding_pending"
+- Profile must be completed via frontend API
+
+---
+
+### 1.2 From Order Domain
+**Event**: `OrderPlaced`  
+**Transport**: Order Domain → EventBridge → Collector Lambda  
+**Trigger**: Collector places an order
+
+```typescript
+{
+  event: "OrderPlaced",
+  orderId: string,
+  collectorUserId: string,
+  makerUserId: string,
+  productIds: string[],
+  totalAmount: number,
+  placedAt: string,
+}
+```
+
+**Action**: Update collector analytics (Phase 2)  
+**Table**: `collector_analytics_table` (Phase 2)  
+**Updates**:
+- Increment `totalOrders`
+- Add to `totalSpent`
+- Track purchasing patterns
+
+---
+
+### 1.3 From Product Domain
+**Event**: `ProductPublished`  
+**Transport**: Product Domain → EventBridge → Collector Lambda  
+**Trigger**: Followed maker publishes new product
+
+```typescript
+{
+  event: "ProductPublished",
+  productId: string,
+  makerUserId: string,
+  categoryId: string,
+  publishedAt: string,
+}
+```
+
+**Action**: Notify collectors following this maker  
+**Business Logic**:
+- Check `follows` table for collectors following `makerUserId`
+- If `notifyOnNewProduct === true`, create notification
+- Event forwarded to Notification Domain
+
+---
+
+### 1.4 From Review Domain
+**Event**: `ReviewReceived`  
+**Transport**: Review Domain → EventBridge → Collector Lambda  
+**Trigger**: Maker reviews collector's purchase behavior
+
+```typescript
+{
+  event: "ReviewReceived",
+  reviewId: string,
+  collectorUserId: string,
+  rating: number,              // 1-5
+  reviewerUserId: string,      // Maker who reviewed
+  createdAt: string,
+}
+```
+
+**Action**: Update collector profile ratings (Phase 2)  
+**Table**: `collector_profiles`  
+**Updates**:
+- Update `averageRating`
+- Increment `totalReviews`
+
+---
+
+## 2. EVENTS EMITTED BY COLLECTOR DOMAIN
+
+These events are produced by the Collector Domain and consumed by other domains:
+
+### 2.1 `CollectorProfileCreated`
+**Trigger**: New collector completes profile setup  
+**Consumers**: Discovery, Notification, Analytics  
+**Transport**: Collector Domain → EventBridge → Consuming Domains
+
+```typescript
+{
+  event: "CollectorProfileCreated",
+  collectorUserId: string,
+  displayName: string,
+  location: {
+    country: string,
+    state: string,
+    city: string,
+  },
+  createdAt: string,
+}
+```
+
+**Consumer Actions**:
+- **Notification Domain**: Send welcome email
+- **Analytics Domain**: Track new collector registration
+
+---
+
+### 2.2 `MakerFollowed`
+**Trigger**: Collector follows a maker  
+**Consumers**: Maker Domain, Notification Domain  
+**Transport**: Collector Domain → EventBridge → Consuming Domains
+
+```typescript
+{
+  event: "MakerFollowed",
+  collectorUserId: string,
+  makerUserId: string,
+  followedAt: string,
+}
+```
+
+**Consumer Actions**:
+- **Maker Domain**: Increment follower count
+- **Notification Domain**: Notify maker of new follower
+
+---
+
+### 2.3 `MakerUnfollowed`
+**Trigger**: Collector unfollows a maker  
+**Consumers**: Maker Domain  
+**Transport**: Collector Domain → EventBridge → Consuming Domains
+
+```typescript
+{
+  event: "MakerUnfollowed",
+  collectorUserId: string,
+  makerUserId: string,
+  unfollowedAt: string,
+}
+```
+
+**Consumer Actions**:
+- **Maker Domain**: Decrement follower count
+
+---
+
+### 2.4 `ItemSaved`
+**Trigger**: Collector saves a product  
+**Consumers**: Product Domain, Discovery Domain (Phase 2)  
+**Transport**: Collector Domain → EventBridge → Consuming Domains
+
+```typescript
+{
+  event: "ItemSaved",
+  collectorUserId: string,
+  productId: string,
+  savedAt: string,
+}
+```
+
+**Consumer Actions**:
+- **Product Domain**: Track save count for popularity
+- **Discovery Domain**: Update trending/popular items
+
+---
+
+### 2.5 `ItemUnsaved`
+**Trigger**: Collector removes saved product  
+**Consumers**: Product Domain, Discovery Domain (Phase 2)  
+**Transport**: Collector Domain → EventBridge → Consuming Domains
+
+```typescript
+{
+  event: "ItemUnsaved",
+  collectorUserId: string,
+  productId: string,
+  unsavedAt: string,
+}
+```
+
+**Consumer Actions**:
+- **Product Domain**: Decrement save count
+
+---
+
+### 2.6 `CollectionCreated`
+**Trigger**: Collector creates a new collection  
+**Consumers**: Analytics Domain (Phase 2)  
+**Transport**: Collector Domain → EventBridge → Consuming Domains
+
+```typescript
+{
+  event: "CollectionCreated",
+  collectorUserId: string,
+  collectionId: string,
+  title: string,
+  visibility: 'public' | 'private',
+  createdAt: string,
+}
+```
+
+**Consumer Actions**:
+- **Analytics Domain**: Track collection creation patterns
+
+---
+
+## 3. EVENT PROCESSING RULES
+
+### Idempotency
+- All event handlers MUST be idempotent
+- Use `eventId` or composite keys to prevent duplicate processing
+- Store processed event IDs in DynamoDB with TTL
+
+### Retry Logic
+- Failed events retry with exponential backoff
+- Max retries: 3
+- After max retries, send to Dead Letter Queue (DLQ)
+- DLQ alerts sent to operations team
+
+### Ordering
+- Events from same domain for same collector MUST be processed in order
+- Use SQS FIFO queues or EventBridge ordering where needed
+- Handle out-of-order events gracefully
+
+### Error Handling
+- Log all processing errors with full event context
+- Do not lose events (use DLQ)
+- Alert on repeated failures for same collector
+
+---
+
+## 4. DEPENDENCY MAP
+
+```
+Collector Domain Depends On:
+├── Auth Domain
+│   └── UserRegistrationComplete
+├── Order Domain
+│   └── OrderPlaced
+├── Product Domain
+│   └── ProductPublished
+└── Review Domain
+    └── ReviewReceived
+
+Collector Domain Provides To:
+├── Maker Domain
+│   ├── MakerFollowed
+│   └── MakerUnfollowed
+├── Product Domain
+│   ├── ItemSaved
+│   └── ItemUnsaved
+├── Discovery Domain
+│   ├── ItemSaved
+│   └── ItemUnsaved
+├── Notification Domain
+│   ├── CollectorProfileCreated
+│   └── MakerFollowed
+└── Analytics Domain
+    ├── CollectorProfileCreated
+    └── CollectionCreated
+```
+
+---
+
+## 5. PHASE IMPLEMENTATION
+
+### Phase 1 (MVP) - Implemented
+- ✅ UserRegistrationComplete (Auth → Collector)
+- ✅ CollectorProfileCreated (Collector → Others)
+- ✅ MakerFollowed (Collector → Maker)
+- ✅ MakerUnfollowed (Collector → Maker)
+- ✅ ItemSaved (Collector → Product/Discovery)
+- ✅ ItemUnsaved (Collector → Product/Discovery)
+
+### Phase 2 - Analytics
+- ⏳ OrderPlaced (Order → Collector)
+- ⏳ ReviewReceived (Review → Collector)
+- ⏳ ProductPublished (Product → Collector)
+- ⏳ CollectionCreated (Collector → Analytics)
+
+---
+
+**Note:** This file only documents data from other domains via events. For data from frontend interactions, see `frontend-data-requirements.txt`.

@@ -1,0 +1,11 @@
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+dist
+cdk.out
+.cdk.staging
+.env
+.env.local
+*.log
+.DS_Store

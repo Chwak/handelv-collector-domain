@@ -1,0 +1,418 @@
+type Query @aws_cognito_user_pools {
+  getCollectorProfile: CollectorProfile
+  getCollectorSettings: CollectorSettings
+  listSavedItems(limit: Int, nextToken: String): SavedItemsConnection
+  listCollections(limit: Int, nextToken: String): CollectionsConnection
+  listWishlists(limit: Int, nextToken: String): WishlistsConnection
+  listFollows(limit: Int, nextToken: String): FollowsConnection
+  getCollection(collectionId: ID!): Collection
+  listCollectionItems(collectionId: ID!, limit: Int, nextToken: String): CollectionItemsConnection
+}
+
+type Mutation @aws_cognito_user_pools {
+  updateCollectorProfile(input: UpdateCollectorProfileInput!): CollectorProfile
+  updateCollectorSettings(input: UpdateCollectorSettingsInput!): CollectorSettings
+  saveItem(input: SaveItemInput!): SavedItem
+  unsaveItem(input: UnsaveItemInput!): Boolean
+  createCollection(input: CreateCollectionInput!): Collection
+  updateCollection(input: UpdateCollectionInput!): Collection
+  deleteCollection(collectionId: ID!): Boolean
+  addItemToCollection(input: AddItemToCollectionInput!): CollectionItem
+  removeItemFromCollection(input: RemoveItemFromCollectionInput!): Boolean
+  followMaker(input: FollowMakerInput!): Follow
+  unfollowMaker(input: UnfollowMakerInput!): Boolean
+  addToWishlist(input: AddToWishlistInput!): WishlistItem
+  removeFromWishlist(input: RemoveFromWishlistInput!): Boolean
+}
+
+type Subscription @aws_cognito_user_pools {
+  onCollectorProfileUpdated(userId: ID!): CollectorProfile
+    @aws_subscribe(mutations: ["updateCollectorProfile"])
+  onItemSaved(collectorUserId: ID!): SavedItem
+    @aws_subscribe(mutations: ["saveItem"])
+  onCollectionUpdated(collectionId: ID!): Collection
+    @aws_subscribe(mutations: ["createCollection", "updateCollection"])
+}
+
+type CollectorProfile {
+  userId: ID!
+  email: String
+  username: String
+  fullName: String
+  givenName: String
+  familyName: String
+  phoneNumber: String
+  emailVerified: Boolean
+  emailVerifiedAt: AWSDateTime
+  displayName: String
+  profileImageUrl: String
+  bio: String
+  location: CollectorLocation
+  favoriteCategories: [String!]
+  notificationPreferences: CollectorProfileNotificationPreferences
+  totalOrders: Int
+  totalSpent: Float
+  favoriteShelfItems: [ID!]
+  favoriteMakers: [ID!]
+  isActive: Boolean
+  isSuspended: Boolean
+  defaultPaymentMethodId: ID
+  savedPaymentMethods: [ID!]
+  defaultShippingAddressId: ID
+  savedShippingAddresses: [ID!]
+  publicProfileEnabled: Boolean
+  profileImageStatus: String
+  profileImageUpdatedAt: AWSDateTime
+  phoneVerified: Boolean
+  phoneVerifiedAt: AWSDateTime
+  suspendedReason: String
+  onboardingComplete: Boolean
+  lastLoginAt: AWSDateTime
+  marketingOptInAt: AWSDateTime
+  termsAcceptedAt: AWSDateTime
+  privacyPolicyAcceptedAt: AWSDateTime
+  sizePreferences: SizePreferences
+  defaultShippingAddress: ShippingAddress
+  preferences: CollectorPreferences
+  ratingScore: Float
+  savedItemsCount: Int
+  collectionsCount: Int
+  purchaseCount: Int
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type ShippingAddress {
+  street: String!
+  city: String!
+  state: String!
+  zip: String!
+  country: String!
+}
+
+type CollectorLocation {
+  city: String
+  state: String
+  country: String
+  zipCode: String
+}
+
+type CollectorProfileNotificationPreferences {
+  newShelfItems: Boolean!
+  priceDrops: Boolean!
+  orderUpdates: Boolean!
+  makerMessages: Boolean!
+}
+
+type CollectorPreferences {
+  emailNotifications: Boolean!
+  marketingEmails: Boolean!
+  defaultSort: String
+}
+
+type SizePreferences {
+  ringSize: String
+  shirtSize: String
+  shoeSize: String
+  hatSize: String
+  dressSize: String
+  waistSize: String
+  inseamLength: String
+  materialAllergies: [String!]
+}
+
+type SavedItem {
+  collectorUserId: ID!
+  shelfItemId: ID!
+  savedAt: AWSDateTime!
+  notes: String
+}
+
+type SavedItemsConnection {
+  items: [SavedItem!]!
+  nextToken: String
+}
+
+type Collection {
+  collectionId: ID!
+  collectorUserId: ID!
+  name: String!
+  description: String
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type CollectionsConnection {
+  items: [Collection!]!
+  nextToken: String
+}
+
+type CollectionItem {
+  collectionId: ID!
+  shelfItemId: ID!
+  addedAt: AWSDateTime!
+  notes: String
+}
+
+type CollectionItemsConnection {
+  items: [CollectionItem!]!
+  nextToken: String
+}
+
+type Follow {
+  collectorUserId: ID!
+  makerUserId: ID!
+  followedAt: AWSDateTime!
+}
+
+type FollowsConnection {
+  items: [Follow!]!
+  nextToken: String
+}
+
+type WishlistItem {
+  collectorUserId: ID!
+  shelfItemId: ID!
+  addedAt: AWSDateTime!
+  notes: String
+}
+
+type WishlistsConnection {
+  items: [WishlistItem!]!
+  nextToken: String
+}
+
+input UpdateCollectorProfileInput {
+  defaultShippingAddress: ShippingAddressInput
+  preferences: CollectorPreferencesInput
+  displayName: String
+  publicProfileEnabled: Boolean
+  sizePreferences: SizePreferencesInput
+}
+
+input ShippingAddressInput {
+  street: String!
+  city: String!
+  state: String!
+  zip: String!
+  country: String!
+}
+
+input CollectorPreferencesInput {
+  emailNotifications: Boolean
+  marketingEmails: Boolean
+  defaultSort: String
+}
+
+input SizePreferencesInput {
+  ringSize: String
+  shirtSize: String
+  shoeSize: String
+  hatSize: String
+  dressSize: String
+  waistSize: String
+  inseamLength: String
+  materialAllergies: [String!]
+}
+
+input SaveItemInput {
+  shelfItemId: ID!
+  notes: String
+}
+
+input UnsaveItemInput {
+  shelfItemId: ID!
+}
+
+input CreateCollectionInput {
+  name: String!
+  description: String
+}
+
+input UpdateCollectionInput {
+  collectionId: ID!
+  name: String
+  description: String
+}
+
+input AddItemToCollectionInput {
+  collectionId: ID!
+  shelfItemId: ID!
+  notes: String
+}
+
+input RemoveItemFromCollectionInput {
+  collectionId: ID!
+  shelfItemId: ID!
+}
+
+input FollowMakerInput {
+  makerUserId: ID!
+}
+
+input UnfollowMakerInput {
+  makerUserId: ID!
+}
+
+input AddToWishlistInput {
+  shelfItemId: ID!
+  notes: String
+}
+
+input RemoveFromWishlistInput {
+  shelfItemId: ID!
+}
+type CollectorSettings {
+  userId: ID!
+  notifications: CollectorNotifications!
+  notificationChannels: CollectorNotificationChannels!
+  privacy: CollectorPrivacy!
+  display: DisplayPreferences!
+  shopping: ShoppingPreferences!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type CollectorNotifications {
+  orderConfirmation: Boolean!
+  orderShipped: Boolean!
+  orderDelivered: Boolean!
+  newShelfItemsFromFavoriteMakers: Boolean!
+  priceDrops: Boolean!
+  backInStock: Boolean!
+  makerMessages: Boolean!
+  customOrderUpdates: Boolean!
+  weeklyNewsletter: Boolean!
+  promotionalOffers: Boolean!
+  accountSecurity: Boolean!
+  policyUpdates: Boolean!
+}
+
+type NotificationChannelPreferences {
+  email: Boolean!
+  push: Boolean!
+  sms: Boolean!
+}
+
+type CollectorNotificationChannels {
+  orderConfirmation: NotificationChannelPreferences!
+  orderShipped: NotificationChannelPreferences!
+  orderDelivered: NotificationChannelPreferences!
+  newShelfItemsFromFavoriteMakers: NotificationChannelPreferences!
+  priceDrops: NotificationChannelPreferences!
+  backInStock: NotificationChannelPreferences!
+  makerMessages: NotificationChannelPreferences!
+  customOrderUpdates: NotificationChannelPreferences!
+  weeklyNewsletter: NotificationChannelPreferences!
+  promotionalOffers: NotificationChannelPreferences!
+  accountSecurity: NotificationChannelPreferences!
+  policyUpdates: NotificationChannelPreferences!
+}
+
+type CollectorPrivacy {
+  showProfilePublicly: Boolean!
+  showPurchaseHistory: Boolean!
+  showCollections: Boolean!
+  showWishlist: Boolean!
+  allowMakerContact: Boolean!
+  allowMessagesFromFollowedMakersOnly: Boolean!
+  allowMessagesAfterPurchaseOnly: Boolean!
+  allowMessagesFromVerifiedMakersOnly: Boolean!
+  blockedUserIds: [ID!]
+}
+
+type DisplayPreferences {
+  language: String!
+  currency: String!
+  measurementSystem: String!
+  timezone: String!
+  dateFormat: String!
+  timeFormat: String!
+}
+
+type ShoppingPreferences {
+  defaultShippingAddressId: String
+  defaultPaymentMethodId: String
+  autoApplyCoupons: Boolean!
+  saveCardForFutureUse: Boolean!
+  autoGroupByMaker: Boolean
+  defaultCollection: String
+  autoFollowOnPurchase: Boolean
+  collectionPrivacyDefault: String
+}
+
+input UpdateCollectorSettingsInput {
+  notifications: CollectorNotificationsInput
+  notificationChannels: CollectorNotificationChannelsInput
+  privacy: CollectorPrivacyInput
+  display: DisplayPreferencesInput
+  shopping: ShoppingPreferencesInput
+}
+
+input CollectorNotificationsInput {
+  orderConfirmation: Boolean
+  orderShipped: Boolean
+  orderDelivered: Boolean
+  newShelfItemsFromFavoriteMakers: Boolean
+  priceDrops: Boolean
+  backInStock: Boolean
+  makerMessages: Boolean
+  customOrderUpdates: Boolean
+  weeklyNewsletter: Boolean
+  promotionalOffers: Boolean
+  accountSecurity: Boolean
+  policyUpdates: Boolean
+}
+
+input NotificationChannelPreferencesInput {
+  email: Boolean
+  push: Boolean
+  sms: Boolean
+}
+
+input CollectorNotificationChannelsInput {
+  orderConfirmation: NotificationChannelPreferencesInput
+  orderShipped: NotificationChannelPreferencesInput
+  orderDelivered: NotificationChannelPreferencesInput
+  newShelfItemsFromFavoriteMakers: NotificationChannelPreferencesInput
+  priceDrops: NotificationChannelPreferencesInput
+  backInStock: NotificationChannelPreferencesInput
+  makerMessages: NotificationChannelPreferencesInput
+  customOrderUpdates: NotificationChannelPreferencesInput
+  weeklyNewsletter: NotificationChannelPreferencesInput
+  promotionalOffers: NotificationChannelPreferencesInput
+  accountSecurity: NotificationChannelPreferencesInput
+  policyUpdates: NotificationChannelPreferencesInput
+}
+
+input CollectorPrivacyInput {
+  showProfilePublicly: Boolean
+  showPurchaseHistory: Boolean
+  showCollections: Boolean
+  showWishlist: Boolean
+  allowMakerContact: Boolean
+  allowMessagesFromFollowedMakersOnly: Boolean
+  allowMessagesAfterPurchaseOnly: Boolean
+  allowMessagesFromVerifiedMakersOnly: Boolean
+  blockedUserIds: [ID!]
+}
+
+input DisplayPreferencesInput {
+  language: String
+  currency: String
+  measurementSystem: String
+  timezone: String
+  dateFormat: String
+  timeFormat: String
+}
+
+input ShoppingPreferencesInput {
+  defaultShippingAddressId: String
+  defaultPaymentMethodId: String
+  autoApplyCoupons: Boolean
+  saveCardForFutureUse: Boolean
+  autoGroupByMaker: Boolean
+  defaultCollection: String
+  autoFollowOnPurchase: Boolean
+  collectionPrivacyDefault: String
+}
