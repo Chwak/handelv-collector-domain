@@ -79,6 +79,9 @@ export class CollectorDomainPipelineStack extends cdk.Stack {
           'npx cdk synth',
         ],
         primaryOutputDirectory: 'cdk.out',
+        env: {
+          SHELL: '/bin/bash',
+        },
       }),
 
       codeBuildDefaults: {
@@ -113,37 +116,27 @@ export class CollectorDomainPipelineStack extends cdk.Stack {
             actions: ['sts:AssumeRole'],
             resources: [
               `arn:aws:iam::${devAccountId}:role/cdk-hnb659fds-deploy-role-*`,
+              `arn:aws:iam::${devAccountId}:role/cdk-hnb659fds-file-publishing-role-*`,
               `arn:aws:iam::${mimicProdAccountId}:role/cdk-hnb659fds-deploy-role-*`,
+              `arn:aws:iam::${mimicProdAccountId}:role/cdk-hnb659fds-file-publishing-role-*`,
               `arn:aws:iam::${prodAccountId}:role/cdk-hnb659fds-deploy-role-*`,
+              `arn:aws:iam::${prodAccountId}:role/cdk-hnb659fds-file-publishing-role-*`,
             ],
           }),
         ],
       },
     });
 
-    // Dev deployment
-    pipeline.addWave('DeployToDev', {
-      post: [
-        new pipelines.CodeBuildStep(`Deploy${this.pascalCase(domain)}Dev`, {
-          commands: [
-            'set -euo pipefail',
-            `echo "=== Deploying ${domain} to dev ==="`,
-            `export ENVIRONMENT=dev AWS_REGION=us-east-1`,
-            'npm ci --no-audit --no-fund',
-            'npm run build',
-            'npx cdk deploy --require-approval never',
-            `echo "✓ ${domain} deployed to dev"`,
-          ],
-        }),
-      ],
+    // Mimic production with approval
+    const mimicApproval = new pipelines.ManualApprovalStep(`ApproveMimic`, {
+      comment: `Approve mimic deployment for ${domain}`,
     });
 
-    // Mimic production
     pipeline.addWave('DeployToMimic', {
+      pre: [mimicApproval],
       post: [
         new pipelines.CodeBuildStep(`Deploy${this.pascalCase(domain)}Mimic`, {
           commands: [
-            'set -euo pipefail',
             `echo "=== Deploying ${domain} to mimic ==="`,
             `export ENVIRONMENT=mimic AWS_REGION=us-east-1`,
             'npm ci --no-audit --no-fund',
@@ -165,7 +158,6 @@ export class CollectorDomainPipelineStack extends cdk.Stack {
       post: [
         new pipelines.CodeBuildStep(`Deploy${this.pascalCase(domain)}Prod`, {
           commands: [
-            'set -euo pipefail',
             `echo "=== Deploying ${domain} to production ==="`,
             `export ENVIRONMENT=prod AWS_REGION=us-east-1`,
             'npm ci --no-audit --no-fund',
