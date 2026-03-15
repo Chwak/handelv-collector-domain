@@ -8,6 +8,7 @@ export interface CollectorAppSyncResolversConstructProps {
   updateCollectorProfileLambda?: lambda.IFunction;
   getCollectorSettingsLambda?: lambda.IFunction;
   updateCollectorSettingsLambda?: lambda.IFunction;
+  collectorItemsLambda?: lambda.IFunction;
 }
 
 export class CollectorAppSyncResolversConstruct extends Construct {
@@ -70,6 +71,54 @@ export class CollectorAppSyncResolversConstruct extends Construct {
         requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(),
         responseMappingTemplate: appsync.MappingTemplate.lambdaResult(),
       });
+    }
+
+    if (props.collectorItemsLambda) {
+      const collectorItemsDataSource = props.api.addLambdaDataSource(
+        'CollectorItemsDataSource',
+        props.collectorItemsLambda
+      );
+
+      const queryFields = [
+        'listSavedItems',
+        'listCollections',
+        'listWishlists',
+        'listFollows',
+        'getCollection',
+        'listCollectionItems',
+      ];
+
+      const mutationFields = [
+        'saveItem',
+        'unsaveItem',
+        'createCollection',
+        'updateCollection',
+        'deleteCollection',
+        'addItemToCollection',
+        'removeItemFromCollection',
+        'followMaker',
+        'unfollowMaker',
+        'addToWishlist',
+        'removeFromWishlist',
+      ];
+
+      for (const fieldName of queryFields) {
+        collectorItemsDataSource.createResolver(`CollectorItemsQuery${fieldName}`, {
+          typeName: 'Query',
+          fieldName,
+          requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(),
+          responseMappingTemplate: appsync.MappingTemplate.lambdaResult(),
+        });
+      }
+
+      for (const fieldName of mutationFields) {
+        collectorItemsDataSource.createResolver(`CollectorItemsMutation${fieldName}`, {
+          typeName: 'Mutation',
+          fieldName,
+          requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(),
+          responseMappingTemplate: appsync.MappingTemplate.lambdaResult(),
+        });
+      }
     }
   }
 }

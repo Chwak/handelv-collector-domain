@@ -12,6 +12,7 @@ import { GetCollectorProfileLambdaConstruct } from "./constructs/lambda/collecto
 import { UpdateCollectorProfileLambdaConstruct } from "./constructs/lambda/collector/update-collector-profile/update-collector-profile-lambda-construct";
 import { GetCollectorSettingsLambdaConstruct } from "./constructs/lambda/collector/get-collector-settings/get-collector-settings-lambda-construct";
 import { UpdateCollectorSettingsLambdaConstruct } from "./constructs/lambda/collector/update-collector-settings/update-collector-settings-lambda-construct";
+import { CollectorItemsLambdaConstruct } from "./constructs/lambda/collector/collector-items/collector-items-lambda-construct";
 import { CollectorAppSyncResolversConstruct } from "./constructs/appsync/collector-appsync-resolvers/collector-appsync-resolvers-construct";
 import { importEventBusFromSharedInfra } from "./utils/eventbridge-helper";
 
@@ -135,6 +136,17 @@ export class CollectorDomainStack extends cdk.Stack {
       removalPolicy,
     });
 
+    const collectorItemsLambda = new CollectorItemsLambdaConstruct(this, "CollectorItemsLambda", {
+      environment: props.environment,
+      regionCode: props.regionCode,
+      collectionsTable: collectorTables.collectorCollections,
+      collectionItemsTable: collectorTables.collectorCollectionItems,
+      savedItemsTable: collectorTables.collectorSavedItems,
+      wishlistsTable: collectorTables.collectorWishlists,
+      followsTable: collectorTables.collectorFollows,
+      removalPolicy,
+    });
+
     // Create AppSync resolvers
     new CollectorAppSyncResolversConstruct(this, "CollectorResolvers", {
       api: collectorAppSync.api,
@@ -142,6 +154,7 @@ export class CollectorDomainStack extends cdk.Stack {
       updateCollectorProfileLambda: updateCollectorProfileLambda.function,
       getCollectorSettingsLambda: getCollectorSettingsLambda.function,
       updateCollectorSettingsLambda: updateCollectorSettingsLambda.function,
+      collectorItemsLambda: collectorItemsLambda.function,
     });
   }
 }

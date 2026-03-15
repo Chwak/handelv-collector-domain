@@ -71,3 +71,8 @@ export function requireAuthenticatedUser(event: { identity?: any }, requiredMode
   }
   return null;
 }
+
+// Preferred naming for authenticated identity; returns Cognito userId (sub).
+export function requireAuthenticatedUserId(event: { identity?: any }, requiredMode: RequiredMode = REQUIRED_ACTIVE_MODE): string | null {
+  return requireAuthenticatedUser(event, requiredMode);
+}

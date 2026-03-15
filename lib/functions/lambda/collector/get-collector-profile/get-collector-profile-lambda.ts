@@ -41,7 +41,12 @@ export const handler = async (event: AppSyncEvent) => {
     if (!result.Item) {
       return null;
     }
-    return result.Item;
+    const item = result.Item;
+    // Ensure non-nullable timestamp fields always have values (guard against old records)
+    const now = new Date().toISOString();
+    if (!item.createdAt) item.createdAt = item.updatedAt || now;
+    if (!item.updatedAt) item.updatedAt = now;
+    return item;
   } catch (err) {
     console.error('getCollectorProfile error:', err);
     throw new Error('Failed to get collector profile');

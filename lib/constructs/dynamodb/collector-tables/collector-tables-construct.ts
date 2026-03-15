@@ -12,6 +12,11 @@ export class CollectorTablesConstruct extends Construct {
   public readonly collectorProfiles: dynamodb.Table;
   public readonly collectorSettings: dynamodb.Table;
   public readonly collectorAuditLogs: dynamodb.Table;
+  public readonly collectorSavedItems: dynamodb.Table;
+  public readonly collectorCollections: dynamodb.Table;
+  public readonly collectorCollectionItems: dynamodb.Table;
+  public readonly collectorWishlists: dynamodb.Table;
+  public readonly collectorFollows: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props: CollectorTablesConstructProps) {
     super(scope, id);
@@ -97,6 +102,115 @@ export class CollectorTablesConstruct extends Construct {
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: props.environment === 'prod' },
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'expires_at',
+    });
+
+    // =====================================================
+    // Collector Saved Items Table
+    // Key Structure: PK=collectorUserId | SK=shelfItemId
+    // =====================================================
+    this.collectorSavedItems = new dynamodb.Table(this, 'CollectorSavedItemsTable', {
+      tableName: `${props.environment}-${props.regionCode}-collector-domain-saved-items-table`,
+      partitionKey: {
+        name: 'collectorUserId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'shelfItemId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: removalPolicy,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: props.environment === 'prod' },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    });
+
+    // =====================================================
+    // Collector Collections Table
+    // Key Structure: PK=collectionId
+    // GSI1: PK=collectorUserId | SK=updatedAt (list collections by collector)
+    // =====================================================
+    this.collectorCollections = new dynamodb.Table(this, 'CollectorCollectionsTable', {
+      tableName: `${props.environment}-${props.regionCode}-collector-domain-collections-table`,
+      partitionKey: {
+        name: 'collectionId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: removalPolicy,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: props.environment === 'prod' },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    });
+
+    this.collectorCollections.addGlobalSecondaryIndex({
+      indexName: 'GSI1-CollectorUserId-UpdatedAt',
+      partitionKey: {
+        name: 'collectorUserId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'updatedAt',
+        type: dynamodb.AttributeType.STRING,
+      },
+    });
+
+    // =====================================================
+    // Collector Collection Items Table
+    // Key Structure: PK=collectionId | SK=shelfItemId
+    // =====================================================
+    this.collectorCollectionItems = new dynamodb.Table(this, 'CollectorCollectionItemsTable', {
+      tableName: `${props.environment}-${props.regionCode}-collector-domain-collection-items-table`,
+      partitionKey: {
+        name: 'collectionId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'shelfItemId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: removalPolicy,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: props.environment === 'prod' },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    });
+
+    // =====================================================
+    // Collector Wishlist Table
+    // Key Structure: PK=collectorUserId | SK=shelfItemId
+    // =====================================================
+    this.collectorWishlists = new dynamodb.Table(this, 'CollectorWishlistsTable', {
+      tableName: `${props.environment}-${props.regionCode}-collector-domain-wishlists-table`,
+      partitionKey: {
+        name: 'collectorUserId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'shelfItemId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: removalPolicy,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: props.environment === 'prod' },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    });
+
+    // =====================================================
+    // Collector Follows Table
+    // Key Structure: PK=collectorUserId | SK=makerUserId
+    // =====================================================
+    this.collectorFollows = new dynamodb.Table(this, 'CollectorFollowsTable', {
+      tableName: `${props.environment}-${props.regionCode}-collector-domain-follows-table`,
+      partitionKey: {
+        name: 'collectorUserId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'makerUserId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: removalPolicy,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: props.environment === 'prod' },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
     });
   }
 }
